@@ -1,11 +1,12 @@
 import * as THREE from 'three';
 import { Reflector } from 'three/addons/objects/Reflector.js';
 import { horizontal, POND, pondPoint, pondShape, randomGenerator } from './common';
+import { PondWaves } from './waves';
 
 /** The reflection is rendered from a clipped mirror camera, then blended over the fish. */
 export function createWater(scene: THREE.Scene) {
   const time = { value: 0 };
-  const floorMaterial = new THREE.MeshStandardMaterial({ color: '#244f43', roughness: 0.95 });
+  const floorMaterial = new THREE.MeshStandardMaterial({ color: '#142d25', roughness: 0.95 });
   floorMaterial.onBeforeCompile = (shader) => {
     shader.uniforms.pondTime = time;
     shader.vertexShader = 'varying vec3 vPondWorld;\n' + shader.vertexShader;
@@ -19,8 +20,9 @@ export function createWater(scene: THREE.Scene) {
       float b = sin(p.x * 7.0 - pondTime * 0.27) * cos(p.y * 6.0 + pondTime * 0.24);
       float caustic = pow(1.0 - abs(sin(a * 1.55 + b * 0.20)), 19.0);
       float caustic2 = pow(1.0 - abs(sin(a * 1.7 - b * 0.3 + 1.2)), 24.0);
-      diffuseColor.rgb *= 0.88 + grain * 0.08;
-      diffuseColor.rgb += vec3(0.20, 0.28, 0.17) * (caustic * 0.20 + caustic2 * 0.12);
+      float depthFalloff = smoothstep(0.12, 1.0, length((p - vec2(${POND.x}, ${POND.z})) / vec2(${POND.rx}, ${POND.rz})));
+      diffuseColor.rgb *= (0.88 + grain * 0.08) * mix(0.52, 1.0, depthFalloff);
+      diffuseColor.rgb += vec3(0.20, 0.28, 0.17) * (caustic * 0.06 + caustic2 * 0.035);
     `);
   };
   const floor = new THREE.Mesh(horizontal(new THREE.ShapeGeometry(pondShape())), floorMaterial);
@@ -45,7 +47,23 @@ export function createWater(scene: THREE.Scene) {
   bank.receiveShadow = true;
   scene.add(bank);
 
-  const water = new Reflector(new THREE.ShapeGeometry(pondShape()), {
+  const waves = new PondWaves();
+  const surfaceGeometry = new THREE.BufferGeometry();
+  const surfacePositions = new Float32Array(waves.heights.length * 3);
+  const surfaceIndices: number[] = [];
+  for (let row = 0; row < waves.rows; row++) for (let col = 0; col < waves.columns; col++) {
+    const i = row * waves.columns + col;
+    surfacePositions.set([waves.x(col), -waves.z(row), 0], i * 3);
+    if (row < waves.rows - 1 && col < waves.columns - 1) {
+      const b = i + waves.columns;
+      if (waves.wet[i] && waves.wet[i + 1] && waves.wet[b]) surfaceIndices.push(i, b, i + 1);
+      if (waves.wet[i + 1] && waves.wet[b] && waves.wet[b + 1]) surfaceIndices.push(i + 1, b, b + 1);
+    }
+  }
+  surfaceGeometry.setAttribute('position', new THREE.BufferAttribute(surfacePositions, 3).setUsage(THREE.DynamicDrawUsage));
+  surfaceGeometry.setIndex(surfaceIndices);
+  surfaceGeometry.computeVertexNormals();
+  const water = new Reflector(surfaceGeometry, {
     textureWidth: 768,
     textureHeight: 768,
     clipBias: 0.003,
@@ -64,9 +82,11 @@ export function createWater(scene: THREE.Scene) {
         uniform mat4 textureMatrix;
         varying vec4 vReflection;
         varying vec3 vWorld;
+        varying vec3 vWaveNormal;
         void main() {
           vReflection = textureMatrix * vec4(position, 1.0);
           vWorld = (modelMatrix * vec4(position, 1.0)).xyz;
+          vWaveNormal = normalize(mat3(modelMatrix) * normal);
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }
       `,
@@ -77,23 +97,24 @@ export function createWater(scene: THREE.Scene) {
         uniform float rain;
         varying vec4 vReflection;
         varying vec3 vWorld;
+        varying vec3 vWaveNormal;
         void main() {
           vec2 p = vWorld.xz;
           float t = pondTime;
           float wx = sin(p.x * 2.8 + t * 0.55 + sin(p.y * 2.6 - t * 0.20)) * 0.6 + sin(p.y * 5.2 + t * 0.6) * 0.22;
           float wy = cos(p.y * 3.6 - t * 0.40 + sin(p.x * 2.0 + t * 0.25)) * 0.6 + cos(p.x * 4.6 - t * 0.38) * 0.25;
           vec4 reflectionUv = vReflection;
-          reflectionUv.xy += vec2(wx, wy) * (0.0014 + rain * 0.0017) * reflectionUv.w;
+          reflectionUv.xy += (vWaveNormal.xz * 0.022 + vec2(wx, wy) * 0.0003) * reflectionUv.w;
           vec3 reflected = texture2DProj(tDiffuse, reflectionUv).rgb;
-          vec3 normal = normalize(vec3(wx * 0.033, 1.0, wy * 0.033));
+          vec3 normal = normalize(vWaveNormal);
           vec3 eye = normalize(cameraPosition - vWorld);
-          float fresnel = pow(1.0 - max(dot(eye, normal), 0.0), 2.0);
-          vec3 outgoing = mix(color, reflected, 0.54 + fresnel * 0.23);
+          // Air/water reflectance grows at grazing angles; the overhead view
+          // stays clear enough to see fish and stones beneath the surface.
+          float fresnel = 0.02 + 0.98 * pow(1.0 - max(dot(eye, normal), 0.0), 5.0);
+          vec3 outgoing = mix(color, reflected, 0.96);
           float glint = pow(max(dot(reflect(-normalize(vec3(-0.4, 1.0, 0.4)), normal), eye), 0.0), 260.0);
           outgoing += vec3(1.0, 0.93, 0.7) * glint * 0.5;
-          float filaments = pow(max(0.0, sin(p.x * 10.0 + p.y * 5.0 + wx * 2.0 + t * 0.4)), 46.0);
-          outgoing += vec3(0.6, 0.7, 0.52) * filaments * 0.014;
-          gl_FragColor = vec4(outgoing, 0.17 + fresnel * 0.29);
+          gl_FragColor = vec4(outgoing, 0.04 + fresnel * 0.72);
           #include <tonemapping_fragment>
           #include <colorspace_fragment>
         }
@@ -125,10 +146,28 @@ export function createWater(scene: THREE.Scene) {
   stones.receiveShadow = true;
   scene.add(stones);
 
+  let previousTime = 0;
+  let nextRain = 0;
   return {
     surface: water,
     color: waterMaterial.uniforms.color.value as THREE.Color,
+    impulse(x: number, z: number, strength = 0.12) { waves.impulse(x, z, strength); },
+    debug() { return { displacedVertices: waves.heights.filter(height => Math.abs(height) > 0.001).length, maxDisplacement: waves.heights.reduce((max, height) => Math.max(max, Math.abs(height)), 0) }; },
     update(elapsed: number, raining: boolean) {
+      waves.step(Math.max(0, elapsed - previousTime));
+      previousTime = elapsed;
+      if (raining && elapsed > nextRain) {
+        const point = pondPoint(random() * Math.PI * 2, random() * 0.86);
+        waves.impulse(point.x, point.z, 0.025);
+        nextRain = elapsed + 0.08;
+      }
+      for (let i = 0; i < waves.heights.length; i++) {
+        const x = surfacePositions[i * 3], z = -surfacePositions[i * 3 + 1];
+        surfacePositions[i * 3 + 2] = waves.heights[i] + (waves.wet[i] ?
+          Math.sin(x * 1.3 + z * 0.7 + elapsed * 1.0) * 0.009 + Math.sin(z * 1.9 - elapsed * 0.7) * 0.006 : 0);
+      }
+      surfaceGeometry.getAttribute('position').needsUpdate = true;
+      surfaceGeometry.computeVertexNormals();
       time.value = elapsed;
       waterMaterial.uniforms.pondTime.value = elapsed;
       waterMaterial.uniforms.rain.value = raining ? 1 : 0;

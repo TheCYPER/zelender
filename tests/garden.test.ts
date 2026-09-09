@@ -25,9 +25,10 @@ test('feeding attracts koi and food is eaten before its expiration time', () => 
   sim.koi.feed(POND.x, POND.z, sim.time);
   const initialFood = sim.state().foodCount;
   assert(initialFood > 0);
-  for (let i = 0; i < 30; i++) sim.step();
+  // Food falls from hand height before the koi can seek it out.
+  for (let i = 0; i < 60; i++) sim.step();
   assert(sim.state().feedingCount > 0);
-  for (let i = 0; i < 570; i++) sim.step();
+  for (let i = 0; i < 540; i++) sim.step();
   // Pellets expire after 18 seconds, so a decrease here proves consumption.
   assert(sim.state().foodCount < initialFood);
 });

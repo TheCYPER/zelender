@@ -1,16 +1,19 @@
 import * as THREE from 'three';
 import type { GardenController, ViewMode, Weather } from './types';
-import { horizontal, noiseTexture, POND, softTexture } from './scene/common';
+import { horizontal, POND, softTexture } from './scene/common';
 import { createLandscape } from './scene/landscape';
 import { createKoi } from './scene/koi';
 import { createWater } from './scene/water';
 import { createWeather } from './scene/weather';
+import { createRendering } from './scene/rendering';
+import { createBackdrop } from './scene/backdrop';
+import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
+import { batchStaticMeshes } from './scene/batching';
 
-const ATMOSPHERE: Record<Weather, { sky: string; fog: number; light: number; sun: string; water: string }> = {
-  sunny: { sky: '#c7d3c2', fog: 0.015, light: 3.1, sun: '#fff0d5', water: '#477c6b' },
-  rain: { sky: '#7c9394', fog: 0.029, light: 1.0, sun: '#c2d5db', water: '#4d7372' },
-  snow: { sky: '#c2cfcd', fog: 0.025, light: 2.1, sun: '#e3edf1', water: '#6c8e87' },
-  mist: { sky: '#c6d1c0', fog: 0.047, light: 1.6, sun: '#f6edda', water: '#648478' },
+const ATMOSPHERE: Record<Weather, { sky: string; light: number; sun: string; water: string }> = {
+  sunny: { sky: '#accde5', light: 3.8, sun: '#fff0d9', water: '#234c42' },
+  rain: { sky: '#899d9c', light: 1.2, sun: '#cfdee2', water: '#294b49' },
+  snow: { sky: '#d6dfdf', light: 2.8, sun: '#e6eef3', water: '#4c6864' },
 };
 
 /** A self-contained garden; its only persistent state is owned by the application. */
@@ -19,7 +22,7 @@ export function createGarden(host: HTMLElement, onInteraction?: (kind: 'feed' | 
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.7));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.04;
+  renderer.toneMappingExposure = 1.02;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.domElement.className = 'garden-canvas';
@@ -30,22 +33,10 @@ export function createGarden(host: HTMLElement, onInteraction?: (kind: 'feed' | 
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(ATMOSPHERE.sunny.sky);
-  const fog = new THREE.FogExp2(ATMOSPHERE.sunny.sky, ATMOSPHERE.sunny.fog);
-  scene.fog = fog;
-  const camera = new THREE.PerspectiveCamera(46, 1, 0.1, 130);
+  const camera = new THREE.PerspectiveCamera(48, 1, 0.1, 250);
   scene.add(camera);
-  // The near cedar frame preserves a room view on every aspect ratio.
-  const roomFrame = new THREE.Group();
-  camera.add(roomFrame);
-  const frameMaterial = new THREE.MeshStandardMaterial({ color: '#76583d', map: noiseTexture('wood', 91), roughness: 0.75, transparent: true });
-  const postGeometry = new THREE.BoxGeometry(1, 1, 1);
-  const frameParts = Array.from({ length: 3 }, () => {
-    const post = new THREE.Mesh(postGeometry, frameMaterial);
-    roomFrame.add(post);
-    return post;
-  });
-  const sunlight = new THREE.DirectionalLight('#fff0d5', 3.1);
-  sunlight.position.set(-7, 16, 8);
+  const sunlight = new THREE.DirectionalLight('#fff0d5', 3.8);
+  sunlight.position.set(-14, 21, 5);
   sunlight.castShadow = true;
   sunlight.shadow.mapSize.set(2048, 2048);
   sunlight.shadow.camera.left = -18;
@@ -57,17 +48,24 @@ export function createGarden(host: HTMLElement, onInteraction?: (kind: 'feed' | 
   sunlight.shadow.normalBias = 0.045;
   sunlight.shadow.bias = -0.0002;
   sunlight.shadow.radius = 3;
-  scene.add(sunlight, new THREE.HemisphereLight('#e2e9d6', '#596b46', 2.0));
-  const bounce = new THREE.DirectionalLight('#d7e6da', 0.5);
+  const skylight = new THREE.HemisphereLight('#dce8f1', '#35362b', 0.55);
+  scene.add(sunlight, skylight);
+  const bounce = new THREE.DirectionalLight('#cddbe6', 0.2);
   bounce.position.set(8, 5, -10);
   scene.add(bounce);
   const landscape = createLandscape(scene);
+  batchStaticMeshes(landscape.room);
+  batchStaticMeshes(scene);
+  const backdrop = createBackdrop(scene);
   const softMap = softTexture();
-  const koi = createKoi(scene, softMap);
-
   const pondWater = createWater(scene);
+  const koi = createKoi(scene, softMap, (x, z) => {
+    pondWater.impulse(x, z, 0.06);
+    ripple(x, z, 0.3);
+  });
   const water = pondWater.surface;
-  const weatherEffects = createWeather(scene, softMap, renderer.getPixelRatio());
+  const weatherEffects = createWeather(scene, renderer.getPixelRatio());
+  const rendering = createRendering(renderer, scene, camera);
 
   const ripples = Array.from({ length: 24 }, () => {
     const material = new THREE.MeshBasicMaterial({ color: '#dce7ca', transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide });
@@ -93,12 +91,34 @@ export function createGarden(host: HTMLElement, onInteraction?: (kind: 'feed' | 
   let weather: Weather = 'sunny';
   let paused = false;
   let disposed = false;
+  const previousLoadComplete = THREE.DefaultLoadingManager.onLoad;
+  const onAssetsLoaded = () => {
+    previousLoadComplete?.();
+    if (!disposed) renderer.shadowMap.needsUpdate = true;
+  };
+  THREE.DefaultLoadingManager.onLoad = onAssetsLoaded;
+  let environment: THREE.WebGLRenderTarget | undefined;
+  const environmentGenerator = new THREE.PMREMGenerator(renderer);
+  environmentGenerator.compileEquirectangularShader();
+  new HDRLoader().load(`${import.meta.env.BASE_URL}assets/environment/forest-slope-1k.hdr`, (texture) => {
+    if (!disposed) {
+      environment = environmentGenerator.fromEquirectangular(texture);
+      scene.environment = environment.texture;
+      scene.environmentIntensity = 0.45;
+      renderer.shadowMap.needsUpdate = true;
+    }
+    texture.dispose();
+    environmentGenerator.dispose();
+  }, undefined, () => environmentGenerator.dispose());
   let elapsed = 0;
+  let waterElapsed = 0;
   let lastFrame = performance.now();
   let frame = 0;
   let width = 1;
   let height = 1;
   let lastInteraction: null | { kind: 'feed' | 'startle'; x: number; z: number; time: number; affected: number } = null;
+  let chimeRings = 0;
+  let frameTiming = { intervalMs: 0, logicMs: 0, renderMs: 0 };
   const reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
   let reducedMotion = reducedMotionQuery.matches;
   const onReducedMotion = () => { reducedMotion = reducedMotionQuery.matches; };
@@ -110,13 +130,14 @@ export function createGarden(host: HTMLElement, onInteraction?: (kind: 'feed' | 
   const pointer = new THREE.Vector2();
 
   function cameraDestination() {
-    const mobile = width < 760;
-    const offset = mobile ? 0 : 2.15;
+    const aspect = width / height;
+    const narrow = THREE.MathUtils.clamp(1.4 / aspect - 1, 0, 1.5);
+    const offset = width < 760 ? 0 : 0.5;
     if (view === 'room') {
-      desiredPosition.set(offset + 0.2, mobile ? 10.5 : 8.2, mobile ? 24 : 19.6);
-      desiredTarget.set(offset - 0.3, 1.2, -0.8);
+      desiredPosition.set(offset + 0.2, 6.8 + narrow * 4, 19.6 + narrow * 8);
+      desiredTarget.set(offset - 0.3, 1.5, -1.2);
     } else {
-      desiredPosition.set(offset, mobile ? 24.5 : 19.0, 5.3);
+      desiredPosition.set(offset, 19 * Math.min(2, Math.max(1, 1.25 / aspect)), 5.3);
       desiredTarget.set(offset - 0.4, 0, 0.7);
     }
   }
@@ -127,13 +148,7 @@ export function createGarden(host: HTMLElement, onInteraction?: (kind: 'feed' | 
     renderer.setSize(width, height);
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
-    const halfHeight = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * 2;
-    const halfWidth = halfHeight * camera.aspect;
-    frameParts[0].position.set(-halfWidth * 0.992, 0, -2);
-    frameParts[1].position.set(halfWidth * 0.992, 0, -2);
-    for (let i = 0; i < 2; i++) frameParts[i].scale.set(halfWidth * 0.075, halfHeight * 2.2, 0.11);
-    frameParts[2].position.set(0, halfHeight * 1.01, -2);
-    frameParts[2].scale.set(halfWidth * 2.15, halfHeight * 0.11, 0.15);
+    rendering.resize(width, height);
     cameraDestination();
   }
   const resizeObserver = new ResizeObserver(resize);
@@ -156,7 +171,7 @@ export function createGarden(host: HTMLElement, onInteraction?: (kind: 'feed' | 
 
   function interact(kind: 'feed' | 'startle', x: number, z: number) {
     const affected = kind === 'feed' ? koi.feed(x, z, elapsed) : koi.startle(x, z, elapsed);
-    ripple(x, z, kind === 'feed' ? 0.65 : 1.3);
+    if (kind === 'startle') { pondWater.impulse(x, z, 0.18); ripple(x, z, 1.0); }
     lastInteraction = { kind, x, z, time: elapsed, affected };
     onInteraction?.(kind);
   }
@@ -171,7 +186,16 @@ export function createGarden(host: HTMLElement, onInteraction?: (kind: 'feed' | 
   function onPointer(event: PointerEvent) {
     if (event.button !== 0) return;
     const point = hit(event);
+    if (view === 'room' && raycaster.intersectObject(landscape.chimeTarget, true).length) {
+      landscape.ringChime();
+      chimeRings++;
+      return;
+    }
     if (point) interact('startle', point.x, point.z);
+  }
+  function onPointerMove(event: PointerEvent) {
+    hit(event);
+    renderer.domElement.style.cursor = view === 'room' && raycaster.intersectObject(landscape.chimeTarget, true).length ? 'pointer' : '';
   }
   function onContext(event: MouseEvent) {
     const point = hit(event);
@@ -183,8 +207,10 @@ export function createGarden(host: HTMLElement, onInteraction?: (kind: 'feed' | 
     if (event.defaultPrevented || event.repeat || event.altKey || event.ctrlKey || event.metaKey) return;
     if (event.key.toLowerCase() === 'f') { event.preventDefault(); interact('feed', POND.x, POND.z); }
     else if (event.key === ' ') { event.preventDefault(); interact('startle', POND.x, POND.z); }
+    else if (event.key.toLowerCase() === 'c' && view === 'room') { event.preventDefault(); landscape.ringChime(); chimeRings++; }
   }
   renderer.domElement.addEventListener('pointerdown', onPointer);
+  renderer.domElement.addEventListener('pointermove', onPointerMove);
   renderer.domElement.addEventListener('contextmenu', onContext);
   renderer.domElement.addEventListener('keydown', onKey);
 
@@ -194,7 +220,9 @@ export function createGarden(host: HTMLElement, onInteraction?: (kind: 'feed' | 
   function render(now: number) {
     if (disposed) return;
     frame = requestAnimationFrame(render);
-    const dt = Math.min((now - lastFrame) / 1000, 0.05);
+    const interval = now - lastFrame;
+    const dt = Math.min(interval / 1000, 0.05);
+    const frameStart = performance.now();
     lastFrame = now;
     if (paused) return;
     elapsed += dt;
@@ -203,19 +231,18 @@ export function createGarden(host: HTMLElement, onInteraction?: (kind: 'feed' | 
     cameraTarget.lerp(desiredTarget, smoothing);
     camera.lookAt(cameraTarget);
     landscape.room.visible = view === 'room' || camera.position.y < 15;
-    frameMaterial.opacity = THREE.MathUtils.lerp(frameMaterial.opacity, view === 'room' ? 1 : 0, smoothing);
-    roomFrame.visible = frameMaterial.opacity > 0.015;
+    if ('update' in landscape && typeof landscape.update === 'function') landscape.update(elapsed, reducedMotion);
     const atmosphere = ATMOSPHERE[weather];
     targetSky.set(atmosphere.sky);
     targetSun.set(atmosphere.sun);
     targetWater.set(atmosphere.water);
-    (scene.background as THREE.Color).lerp(targetSky, dt * 1.5);
-    fog.color.copy(scene.background as THREE.Color);
-    fog.density = THREE.MathUtils.lerp(fog.density, atmosphere.fog, dt * 1.5);
+    if (scene.background instanceof THREE.Color) scene.background.lerp(targetSky, dt * 1.5);
+    scene.backgroundIntensity = THREE.MathUtils.lerp(scene.backgroundIntensity, weather === 'rain' ? 0.45 : 0.85, dt * 1.5);
     sunlight.color.lerp(targetSun, dt * 1.5);
     sunlight.intensity = THREE.MathUtils.lerp(sunlight.intensity, atmosphere.light, dt * 1.5);
     pondWater.color.lerp(targetWater, dt * 1.5);
-    pondWater.update(reducedMotion ? elapsed * 0.2 : elapsed, weather === 'rain');
+    waterElapsed += dt * (reducedMotion ? 0.2 : 1);
+    pondWater.update(waterElapsed, weather === 'rain');
     weatherEffects.update(elapsed, weather, reducedMotion);
     koi.update(elapsed, dt, reducedMotion);
     for (const item of ripples) {
@@ -225,7 +252,9 @@ export function createGarden(host: HTMLElement, onInteraction?: (kind: 'feed' | 
       item.mesh.scale.setScalar(0.07 + age * item.strength);
       item.mesh.material.opacity = Math.max(0, 0.33 * (1 - age / 2.9));
     }
-    renderer.render(scene, camera);
+    const renderStart = performance.now();
+    rendering.render();
+    frameTiming = { intervalMs: Math.round(interval), logicMs: Math.round(renderStart - frameStart), renderMs: Math.round(performance.now() - renderStart) };
     renderer.shadowMap.autoUpdate = false;
   }
   frame = requestAnimationFrame(render);
@@ -238,21 +267,27 @@ export function createGarden(host: HTMLElement, onInteraction?: (kind: 'feed' | 
     setPaused(value) { paused = value; lastFrame = performance.now(); },
     getDebugState() {
       const center = new THREE.Vector3(POND.x, POND.waterY, POND.z).project(camera);
+      const chime = landscape.chimeTarget.localToWorld(new THREE.Vector3(0, -0.27, 0)).project(camera);
       return {
         view, weather, paused, reducedMotion, elapsed: Math.round(elapsed * 10) / 10,
         camera: camera.position.toArray(),
         projectedPondCenter: { x: Math.round((center.x + 1) * width / 2), y: Math.round((1 - center.y) * height / 2) },
         lastInteraction,
+        waves: pondWater.debug(),
+        chime: { rings: chimeRings, angle: landscape.chimeTarget.rotation.z, screen: { x: Math.round((chime.x + 1) * width / 2), y: Math.round((1 - chime.y) * height / 2) } },
         ...koi.debug(elapsed, camera, width, height),
         renderer: { calls: renderer.info.render.calls, triangles: renderer.info.render.triangles },
+        frameTiming,
       };
     },
     dispose() {
       disposed = true;
+      if (THREE.DefaultLoadingManager.onLoad === onAssetsLoaded) THREE.DefaultLoadingManager.onLoad = previousLoadComplete;
       cancelAnimationFrame(frame);
       resizeObserver.disconnect();
       reducedMotionQuery.removeEventListener('change', onReducedMotion);
       renderer.domElement.removeEventListener('pointerdown', onPointer);
+      renderer.domElement.removeEventListener('pointermove', onPointerMove);
       renderer.domElement.removeEventListener('contextmenu', onContext);
       renderer.domElement.removeEventListener('keydown', onKey);
       const geometries = new Set<THREE.BufferGeometry>();
@@ -260,6 +295,7 @@ export function createGarden(host: HTMLElement, onInteraction?: (kind: 'feed' | 
       const textures = new Set<THREE.Texture>();
       scene.traverse((object) => {
         if (!(object instanceof THREE.Mesh || object instanceof THREE.Points || object instanceof THREE.Sprite)) return;
+        if (object instanceof THREE.InstancedMesh) object.dispose();
         geometries.add(object.geometry);
         const list = Array.isArray(object.material) ? object.material : [object.material];
         for (const material of list) {
@@ -271,7 +307,11 @@ export function createGarden(host: HTMLElement, onInteraction?: (kind: 'feed' | 
       materials.forEach((material) => material.dispose());
       textures.forEach((texture) => texture.dispose());
       pondWater.dispose();
+      landscape.dispose();
+      backdrop.dispose();
       sunlight.shadow.dispose();
+      environment?.dispose();
+      rendering.dispose();
       renderer.dispose();
       renderer.domElement.remove();
     },

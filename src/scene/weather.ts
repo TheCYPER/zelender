@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { Weather } from '../types';
 import { randomGenerator } from './common';
 
-export function createWeather(scene: THREE.Scene, softMap: THREE.Texture, dpr: number) {
+export function createWeather(scene: THREE.Scene, dpr: number) {
   const random = randomGenerator(472);
   const positions = new Float32Array(1600 * 3);
   const seeds = new Float32Array(1600);
@@ -57,25 +57,12 @@ export function createWeather(scene: THREE.Scene, softMap: THREE.Texture, dpr: n
   const particles = new THREE.Points(geometry, material);
   particles.frustumCulled = false;
   scene.add(particles);
-  const mist = new THREE.Group();
-  const clouds: THREE.Sprite[] = [];
-  for (let i = 0; i < 11; i++) {
-    const cloud = new THREE.Sprite(new THREE.SpriteMaterial({ color: '#dfebd9', map: softMap, transparent: true, opacity: 0, depthWrite: false }));
-    cloud.position.set((random() - 0.5) * 23, 0.8 + random() * 2.0, -8 + random() * 15);
-    cloud.scale.set(10 + random() * 6, 1.2 + random() * 1.5, 1);
-    mist.add(cloud);
-    clouds.push(cloud);
-  }
-  scene.add(mist);
   return {
     update(time: number, weather: Weather, reducedMotion: boolean) {
       material.uniforms.time.value = reducedMotion ? time * 0.25 : time;
       material.uniforms.kind.value = weather === 'rain' ? 1 : weather === 'snow' ? 2 : 0;
-      particles.visible = weather !== 'mist' && !reducedMotion;
-      clouds.forEach((cloud, index) => {
-        cloud.material.opacity = weather === 'mist' ? 0.115 : weather === 'rain' ? 0.045 : 0.018;
-        cloud.position.x += Math.sin(time * 0.08 + index * 1.7) * 0.001;
-      });
+      particles.visible = !reducedMotion;
+
     },
   };
 }

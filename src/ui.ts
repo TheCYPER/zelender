@@ -13,7 +13,6 @@ const paths = {
   sunny: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M5 19l1.5-1.5M17.5 6.5 19 5"/>',
   rain: '<path d="M6 14a4 4 0 1 1 .5-8A5.5 5.5 0 0 1 17 7a3.5 3.5 0 0 1 .5 7M7 17l-1 3M12 16l-1 3M17 17l-1 3"/>',
   snow: '<path d="M12 3v18M4.2 7.5l15.6 9M4.2 16.5l15.6-9M9 4.5l3 3 3-3M9 19.5l3-3 3 3M4 11l4-1-1-4M20 13l-4 1 1 4M7 18l1-4-4-1M17 6l-1 4 4 1"/>',
-  mist: '<path d="M4 7h13M7 12h14M3 17h14M20 7h1M3 12h1M20 17h1"/>',
   focus: '<path d="M8 3H3v5M16 3h5v5M21 16v5h-5M3 16v5h5"/>',
   sound: '<path d="m11 5-5 4H3v6h3l5 4V5ZM15 8a6 6 0 0 1 0 8M18 5a10 10 0 0 1 0 14"/>',
   mute: '<path d="m11 5-5 4H3v6h3l5 4V5ZM16 9l6 6M16 15l6-6"/>',
@@ -29,11 +28,10 @@ function icon(name: IconName, className = ''): string {
   return `<svg class="icon ${className}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name]}</svg>`;
 }
 
-const weatherOptions: { value: Weather; name: string; description: string; caption: string }[] = [
-  { value: 'sunny', name: '晴日', description: '光穿过树梢', caption: '日光漫过庭前' },
-  { value: 'rain', name: '听雨', description: '雨落一池涟漪', caption: '静听雨落水面' },
-  { value: 'snow', name: '初雪', description: '庭院轻轻落白', caption: '等一场雪落下' },
-  { value: 'mist', name: '薄雾', description: '山水隐入朦胧', caption: '庭院隐入薄雾' },
+const weatherOptions: { value: Weather; name: string; description: string }[] = [
+  { value: 'sunny', name: '晴日', description: '光穿过树梢' },
+  { value: 'rain', name: '听雨', description: '雨落一池涟漪' },
+  { value: 'snow', name: '初雪', description: '庭院轻轻落白' },
 ];
 
 /** All audio is synthesized locally, and starts only after a button gesture. */
@@ -89,7 +87,6 @@ export function mountUI(host: HTMLElement, garden: GardenController): { dispose(
   let soundOn = false;
   let disposed = false;
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
-  const mobile = window.matchMedia('(max-width: 760px)');
   const cleanup = new AbortController();
   const waterSound = createWaterSound();
   const root = document.createElement('div');
@@ -97,19 +94,14 @@ export function mountUI(host: HTMLElement, garden: GardenController): { dispose(
   // The template contains static application copy only; all todo content uses textContent.
   root.innerHTML = `
     <header class="garden-header">
-      <div class="identity" aria-label="Zelender，一方庭院">
-        <span class="identity-mark" aria-hidden="true">庭</span>
-        <div class="identity-name"><span>Zelender</span><span class="identity-description">一方庭院，片刻自在</span></div>
-      </div>
-      <button class="mobile-organizer icon-button glass" type="button" aria-label="打开日历和待办" aria-expanded="false" aria-controls="organizer">${icon('calendar')}</button>
+      <section class="clock-section" aria-label="当前时间">
+        <time class="clock-time"></time>
+        <p class="clock-date"></p>
+      </section>
+      <button class="organizer-toggle icon-button" type="button" aria-label="打开日历和待办" aria-expanded="false" aria-controls="organizer" title="日历与待办">${icon('calendar')}</button>
     </header>
-    <section class="clock-section" aria-label="当前时间">
-      <time class="clock-time"></time>
-      <p class="clock-date"></p>
-      <p class="weather-caption"><span class="caption-line"></span><span class="weather-caption-text"></span></p>
-    </section>
-    <aside class="organizer glass" id="organizer" aria-label="日历和待办">
-      <div class="organizer-heading"><span class="organizer-title">日常</span><span class="organizer-subtitle">一日，一事</span><button class="organizer-close icon-button" type="button" aria-label="收起日历和待办">${icon('close')}</button></div>
+    <aside class="organizer glass" id="organizer" aria-label="日历和待办" hidden>
+      <div class="organizer-heading"><span class="organizer-title">日常</span><button class="organizer-close icon-button" type="button" aria-label="收起日历和待办">${icon('close')}</button></div>
       <section class="calendar-section" aria-label="日历">
         <div class="calendar-heading">
           <h2 class="calendar-month" aria-live="polite"></h2>
@@ -127,27 +119,28 @@ export function mountUI(host: HTMLElement, garden: GardenController): { dispose(
       </section>
       <p class="storage-note">${icon('lock')}<span>保存在此浏览器</span></p>
     </aside>
-    <div class="garden-note" aria-hidden="true"><p>心静处，水自清。</p><span>にわの時間</span></div>
-    <div class="interaction-hint">${icon('pond')}<span class="pointer-hint">右键投喂<span class="hint-separator"></span>左键惊鱼</span><span class="touch-hint">轻触水面惊鱼，用下方按钮投喂</span></div>
-    <nav class="garden-toolbar glass" aria-label="庭院控制">
+    <nav class="garden-toolbar" aria-label="庭院控制">
       <div class="view-switch" role="group" aria-label="选择视角"><button class="view-button" type="button" data-view="room" aria-pressed="true">${icon('room')}<span>庭前</span></button><button class="view-button" type="button" data-view="pond" aria-pressed="false">${icon('pond')}<span>池畔</span></button></div>
       <span class="toolbar-divider" aria-hidden="true"></span>
       <button class="weather-toggle toolbar-button" type="button" aria-label="改变天气" aria-expanded="false" aria-controls="weather-popover"><span class="weather-icon"></span><span class="weather-label"></span></button>
       <button class="feed-button toolbar-button" type="button" aria-label="投喂锦鲤">${icon('feed')}<span>投喂</span></button>
-      <span class="toolbar-divider" aria-hidden="true"></span>
-      <button class="focus-toggle toolbar-button icon-only" type="button" aria-label="静观：隐藏日历和待办" aria-pressed="false" title="静观">${icon('focus')}</button>
-      <button class="sound-toggle toolbar-button icon-only" type="button" aria-label="开启水声" aria-pressed="false" title="开启水声">${icon('mute')}</button>
       <button class="settings-toggle toolbar-button icon-only" type="button" aria-label="设置与新标签页安装" aria-expanded="false" aria-controls="settings-popover" title="设置">${icon('settings')}</button>
     </nav>
+    <button class="focus-exit icon-button" type="button" aria-label="退出静观，显示界面，快捷键 H" title="显示界面 (H)" hidden>${icon('focus')}</button>
     <section class="weather-popover popover glass" id="weather-popover" aria-label="选择天气" hidden><p class="popover-heading">庭院里的天气</p><div class="weather-options" role="group" aria-label="天气"></div><p class="popover-footnote">随心切换，不代表当地天气</p></section>
     <section class="settings-popover popover glass" id="settings-popover" role="dialog" aria-labelledby="settings-title" hidden>
-      <div class="settings-heading"><h2 id="settings-title">照自己的节奏</h2><button class="settings-close icon-button" type="button" aria-label="关闭设置">${icon('close')}</button></div>
+      <div class="settings-heading"><h2 id="settings-title">庭院设置</h2><button class="settings-close icon-button" type="button" aria-label="关闭设置">${icon('close')}</button></div>
+      <div class="settings-actions">
+        <button class="sound-toggle settings-action" type="button" aria-label="开启水声" aria-pressed="false">${icon('mute')}<span>水声</span><span class="setting-state">已关闭</span></button>
+        <button class="focus-toggle settings-action" type="button" aria-label="进入静观，隐藏界面" aria-pressed="false">${icon('focus')}<span>静观</span><span class="setting-state">隐藏界面</span></button>
+      </div>
       <label class="opacity-label" for="sidebar-opacity">侧栏透明度<output for="sidebar-opacity" class="opacity-value"></output></label>
       <input class="opacity-slider" id="sidebar-opacity" type="range" min="15" max="85" step="1">
       <div class="slider-labels"><span>清晰</span><span>通透</span></div>
       <div class="install-guide"><h3>把庭院设为新标签页</h3><p>每次打开 Chrome，都回到这一方安静。</p><a class="download-extension" href="./zelender-extension.zip" download>${icon('download')}<span>下载 Chrome 扩展</span></a><ol><li>下载后，解压 ZIP 文件。</li><li>打开 <code>chrome://extensions</code>，开启「开发者模式」。</li><li>选择「加载已解压的扩展程序」，选中解压后的文件夹。</li></ol></div>
       <p class="settings-note">待办仅存于当前浏览器，不会上传。网页与扩展的数据各自保存。</p>
-      <p class="keyboard-hint"><kbd>1</kbd> 庭前 <kbd>2</kbd> 池畔 <kbd>F</kbd> 投喂 <kbd>Esc</kbd> 收起面板</p>
+      <p class="interaction-guide"><span class="pointer-hint">右键水面投喂 · 左键水面惊鱼</span><span class="touch-hint">轻触水面惊鱼，用下方按钮投喂</span></p>
+      <p class="keyboard-hint"><kbd>1</kbd> 庭前 <kbd>2</kbd> 池畔 <kbd>F</kbd> 投喂 <kbd>H</kbd> 隐藏界面 <kbd>Esc</kbd> 收起面板</p>
     </section>
     <div class="toast glass" role="status" aria-live="polite" aria-atomic="true" hidden></div>
   `;
@@ -167,7 +160,8 @@ export function mountUI(host: HTMLElement, garden: GardenController): { dispose(
   const weatherToggle = find<HTMLButtonElement>('.weather-toggle');
   const settingsPopover = find<HTMLElement>('.settings-popover');
   const settingsToggle = find<HTMLButtonElement>('.settings-toggle');
-  const mobileToggle = find<HTMLButtonElement>('.mobile-organizer');
+  const organizerToggle = find<HTMLButtonElement>('.organizer-toggle');
+  const focusExit = find<HTMLButtonElement>('.focus-exit');
   const soundToggle = find<HTMLButtonElement>('.sound-toggle');
   const opacitySlider = find<HTMLInputElement>('.opacity-slider');
   const toast = find<HTMLDivElement>('.toast');
@@ -196,15 +190,16 @@ export function mountUI(host: HTMLElement, garden: GardenController): { dispose(
   }
 
   function setOrganizerVisibility() {
-    const visible = !focused && (!mobile.matches || organizerOpen);
+    const visible = !focused && organizerOpen;
     organizer.hidden = !visible;
     root.classList.toggle('is-focus', focused);
-    root.classList.toggle('is-organizer-open', visible && mobile.matches);
-    mobileToggle.setAttribute('aria-expanded', String(visible));
-    mobileToggle.setAttribute('aria-label', visible ? '收起日历和待办' : '打开日历和待办');
+    root.classList.toggle('is-organizer-open', visible);
+    organizerToggle.setAttribute('aria-expanded', String(visible));
+    organizerToggle.setAttribute('aria-label', visible ? '收起日历和待办' : '打开日历和待办');
+    focusExit.hidden = !focused;
     const focusToggle = find<HTMLButtonElement>('.focus-toggle');
     focusToggle.setAttribute('aria-pressed', String(focused));
-    focusToggle.setAttribute('aria-label', focused ? '显示日历和待办' : '静观：隐藏日历和待办');
+    focusToggle.setAttribute('aria-label', focused ? '退出静观，显示界面' : '进入静观，隐藏界面');
   }
 
   function closePopovers(returnFocus = false) {
@@ -214,6 +209,15 @@ export function mountUI(host: HTMLElement, garden: GardenController): { dispose(
     settingsToggle.setAttribute('aria-expanded', 'false');
     weatherToggle.setAttribute('aria-expanded', 'false');
     if (returnFocus) previous?.focus();
+  }
+
+  function setFocusMode(active: boolean) {
+    focused = active;
+    organizerOpen = false;
+    closePopovers();
+    setOrganizerVisibility();
+    if (focused) focusExit.focus();
+    else settingsToggle.focus();
   }
 
   function chooseView(view: ViewMode) {
@@ -230,7 +234,7 @@ export function mountUI(host: HTMLElement, garden: GardenController): { dispose(
     const current = weatherOptions.find(option => option.value === settings.weather)!;
     find<HTMLElement>('.weather-label').textContent = current.name;
     find<HTMLElement>('.weather-icon').innerHTML = icon(current.value);
-    find<HTMLElement>('.weather-caption-text').textContent = current.caption;
+    weatherToggle.setAttribute('aria-label', `改变天气，当前${current.name}`);
     root.querySelectorAll<HTMLButtonElement>('[data-weather]').forEach(button => {
       button.setAttribute('aria-pressed', String(button.dataset.weather === current.value));
     });
@@ -356,7 +360,7 @@ export function mountUI(host: HTMLElement, garden: GardenController): { dispose(
   }
 
   function renderSound() {
-    soundToggle.innerHTML = icon(soundOn ? 'sound' : 'mute');
+    soundToggle.innerHTML = `${icon(soundOn ? 'sound' : 'mute')}<span>水声</span><span class="setting-state">${soundOn ? '已开启' : '已关闭'}</span>`;
     soundToggle.setAttribute('aria-pressed', String(soundOn));
     soundToggle.setAttribute('aria-label', soundOn ? '关闭水声' : '开启水声');
     soundToggle.title = soundOn ? '关闭水声' : '开启水声';
@@ -420,18 +424,16 @@ export function mountUI(host: HTMLElement, garden: GardenController): { dispose(
     find<HTMLElement>('.todo-scroll').scrollTo({ top: find<HTMLElement>('.todo-scroll').scrollHeight });
   });
   find<HTMLButtonElement>('.feed-button').addEventListener('click', () => garden.feed());
-  find<HTMLButtonElement>('.focus-toggle').addEventListener('click', () => {
-    focused = !focused;
-    if (!focused && mobile.matches) organizerOpen = true;
-    closePopovers(); setOrganizerVisibility();
-  });
-  mobileToggle.addEventListener('click', () => {
+  find<HTMLButtonElement>('.focus-toggle').addEventListener('click', () => setFocusMode(!focused));
+  focusExit.addEventListener('click', () => setFocusMode(false));
+  organizerToggle.addEventListener('click', () => {
     organizerOpen = organizer.hidden;
     focused = false;
     closePopovers(); setOrganizerVisibility();
+    if (organizerOpen) grid.querySelector<HTMLButtonElement>('[tabindex="0"]')?.focus();
   });
   find<HTMLButtonElement>('.organizer-close').addEventListener('click', () => {
-    organizerOpen = false; setOrganizerVisibility(); mobileToggle.focus();
+    organizerOpen = false; setOrganizerVisibility(); organizerToggle.focus();
   });
   weatherToggle.addEventListener('click', () => {
     const opening = weatherPopover.hidden;
@@ -441,6 +443,7 @@ export function mountUI(host: HTMLElement, garden: GardenController): { dispose(
   });
   settingsToggle.addEventListener('click', () => {
     const opening = settingsPopover.hidden;
+    if (opening) { organizerOpen = false; setOrganizerVisibility(); }
     closePopovers(); settingsPopover.hidden = !opening;
     settingsToggle.setAttribute('aria-expanded', String(opening));
     if (opening) find<HTMLButtonElement>('.settings-close').focus();
@@ -469,15 +472,18 @@ export function mountUI(host: HTMLElement, garden: GardenController): { dispose(
     if (!weatherPopover.contains(target) && !settingsPopover.contains(target) && !weatherToggle.contains(target) && !settingsToggle.contains(target)) closePopovers();
   }, { signal: cleanup.signal });
   document.addEventListener('keydown', event => {
-    if (event.defaultPrevented) return;
+    if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return;
     if (event.key === 'Escape') {
       if (!settingsPopover.hidden || !weatherPopover.hidden) { closePopovers(true); return; }
-      if (mobile.matches && !organizer.hidden) { organizerOpen = false; setOrganizerVisibility(); mobileToggle.focus(); }
+      if (!organizer.hidden) { organizerOpen = false; setOrganizerVisibility(); organizerToggle.focus(); }
+      else if (focused) setFocusMode(false);
       return;
     }
-    if (event.altKey || event.ctrlKey || event.metaKey || event.repeat) return;
+    if (event.repeat) return;
     const target = event.target;
-    if (target instanceof HTMLElement && (target.closest('input,textarea,select,[contenteditable="true"]') || !settingsPopover.hidden)) return;
+    if (target instanceof HTMLElement && target.closest('input,textarea,select,[contenteditable="true"]')) return;
+    if (event.key.toLowerCase() === 'h') { event.preventDefault(); setFocusMode(!focused); return; }
+    if (!settingsPopover.hidden) return;
     if (event.key === '1') chooseView('room');
     if (event.key === '2') chooseView('pond');
     if (event.key.toLowerCase() === 'f') garden.feed();
@@ -507,7 +513,14 @@ export function mountUI(host: HTMLElement, garden: GardenController): { dispose(
       }
     }
   }, { signal: cleanup.signal });
-  mobile.addEventListener('change', setOrganizerVisibility, { signal: cleanup.signal });
+
+  // Keep the organizer form inside the visible area when a mobile keyboard opens.
+  function resizeVisibleArea() {
+    root.style.setProperty('--visible-height', `${window.visualViewport?.height ?? window.innerHeight}px`);
+    if (document.activeElement === todoInput) todoInput.scrollIntoView({ block: 'nearest' });
+  }
+  window.visualViewport?.addEventListener('resize', resizeVisibleArea, { signal: cleanup.signal });
+  resizeVisibleArea();
 
   garden.setView(settings.view);
   garden.setWeather(settings.weather);

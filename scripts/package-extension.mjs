@@ -25,6 +25,11 @@ await cp(
   join(distDirectory, 'licenses', 'three.txt'),
 );
 
+await cp(
+  join(projectDirectory, 'node_modules', '@dgreenheck', 'ez-tree', 'LICENSE'),
+  join(distDirectory, 'licenses', 'ez-tree.txt'),
+);
+
 await rm(extensionDirectory, { recursive: true, force: true });
 await cp(distDirectory, extensionDirectory, {
   recursive: true,

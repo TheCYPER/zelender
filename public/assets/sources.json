@@ -1,0 +1,232 @@
+{
+  "verifiedDate": "2026-09-09",
+  "assets": [
+    {
+      "file": "textures/wood-color.jpg",
+      "sourceAsset": "weathered_planks",
+      "sourcePage": "https://polyhaven.com/a/weathered_planks",
+      "license": "CC0-1.0",
+      "authors": {
+        "Dario Barresi": "Processing",
+        "Dimitrios Savva": "Photography"
+      },
+      "sourceUrl": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/weathered_planks/weathered_planks_diff_1k.jpg",
+      "sourceMd5": "5d7c9e7088bfa54490ba03ba15b660d8",
+      "sourceBytes": 599581,
+      "sha256": "73b7562609b87cf1a07d09e45346b6cb064eb0c4278ee9d15b1260db709477ca",
+      "bytes": 279266,
+      "processing": "sips JPEG quality 85, 1024x1024"
+    },
+    {
+      "file": "textures/wood-normal.jpg",
+      "sourceAsset": "weathered_planks",
+      "sourcePage": "https://polyhaven.com/a/weathered_planks",
+      "license": "CC0-1.0",
+      "authors": {
+        "Dario Barresi": "Processing",
+        "Dimitrios Savva": "Photography"
+      },
+      "sourceUrl": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/weathered_planks/weathered_planks_nor_gl_1k.jpg",
+      "sourceMd5": "119541f6b143f21f0a6e9774e9208905",
+      "sourceBytes": 681552,
+      "sha256": "9bef3258e6127f9d7d4bea7281d34f02591cce96fe463f630602c7a0258d330e",
+      "bytes": 331240,
+      "processing": "sips JPEG quality 92, 1024x1024"
+    },
+    {
+      "file": "textures/wood-roughness.jpg",
+      "sourceAsset": "weathered_planks",
+      "sourcePage": "https://polyhaven.com/a/weathered_planks",
+      "license": "CC0-1.0",
+      "authors": {
+        "Dario Barresi": "Processing",
+        "Dimitrios Savva": "Photography"
+      },
+      "sourceUrl": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/weathered_planks/weathered_planks_rough_1k.jpg",
+      "sourceMd5": "4ca50b076e1fc58f6862a5b039a7d5c9",
+      "sourceBytes": 218802,
+      "sha256": "68b78aa1a429c1671ae8d4c2510562323b5ffcdff072cccdc75fc550ffa313ff",
+      "bytes": 22191,
+      "processing": "sips JPEG quality 85, resized to 512x512"
+    },
+    {
+      "file": "textures/bark-color.jpg",
+      "sourceAsset": "bark_brown_02",
+      "sourcePage": "https://polyhaven.com/a/bark_brown_02",
+      "license": "CC0-1.0",
+      "authors": {
+        "Rob Tuytel": "All"
+      },
+      "sourceUrl": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/bark_brown_02/bark_brown_02_diff_1k.jpg",
+      "sourceMd5": "6669cca520594bdca19f94084984ab72",
+      "sourceBytes": 659592,
+      "sha256": "9782ccfdb11ee9c764470fd7631f1e4a74c7950f32841fd9a67e9030cfcb8278",
+      "bytes": 661793,
+      "processing": "sips JPEG quality 85, 1024x1024"
+    },
+    {
+      "file": "textures/bark-normal.jpg",
+      "sourceAsset": "bark_brown_02",
+      "sourcePage": "https://polyhaven.com/a/bark_brown_02",
+      "license": "CC0-1.0",
+      "authors": {
+        "Rob Tuytel": "All"
+      },
+      "sourceUrl": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/bark_brown_02/bark_brown_02_nor_gl_1k.jpg",
+      "sourceMd5": "1cad3fe0349a44df2d4d1c2859c79920",
+      "sourceBytes": 1015623,
+      "sha256": "333c9302276de2da32af64112da706b2f1dd34bada56259155aba22c1976f802",
+      "bytes": 1094837,
+      "processing": "sips JPEG quality 92, 1024x1024"
+    },
+    {
+      "file": "textures/bark-roughness.jpg",
+      "sourceAsset": "bark_brown_02",
+      "sourcePage": "https://polyhaven.com/a/bark_brown_02",
+      "license": "CC0-1.0",
+      "authors": {
+        "Rob Tuytel": "All"
+      },
+      "sourceUrl": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/bark_brown_02/bark_brown_02_rough_1k.jpg",
+      "sourceMd5": "bbcde696e5b9418cdcb2abe638965417",
+      "sourceBytes": 337946,
+      "sha256": "ef906912bf2998600e4300b05bf76b668a9222dcddbbdd478e056c71e7e6aa31",
+      "bytes": 94674,
+      "processing": "sips JPEG quality 85, resized to 512x512"
+    },
+    {
+      "file": "environment/forest-slope-1k.hdr",
+      "sourceAsset": "forest_slope",
+      "sourcePage": "https://polyhaven.com/a/forest_slope",
+      "license": "CC0-1.0",
+      "authors": {
+        "Andreas Mischok": "All"
+      },
+      "sourceUrl": "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/forest_slope_1k.hdr",
+      "sourceMd5": "d7676fa11b7a6c4cc3333ac6505e08d2",
+      "sourceBytes": 1911073,
+      "sha256": "926a6bb81897919b2924f42407162b8d54be91eab2da3fe7fe19daf308cfa09a",
+      "bytes": 1911073,
+      "processing": "unchanged"
+    },
+    {
+      "file": "textures/stone-color.jpg",
+      "sourceAsset": "dark_rock",
+      "sourcePage": "https://polyhaven.com/a/dark_rock",
+      "license": "CC0-1.0",
+      "authors": {
+        "Amal Kumar": "All"
+      },
+      "sourceUrl": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/dark_rock/dark_rock_diff_1k.jpg",
+      "sourceMd5": "ee1bf662b14c31830e0683197f6a4c65",
+      "sourceBytes": 533128,
+      "sha256": "3f0f7043618fe58f132641d24040d6d763c7a49cb69b8e22882ebe2e6ba2a25a",
+      "bytes": 240117,
+      "processing": "sips JPEG quality 85, 1024x1024"
+    },
+    {
+      "file": "textures/stone-normal.jpg",
+      "sourceAsset": "dark_rock",
+      "sourcePage": "https://polyhaven.com/a/dark_rock",
+      "license": "CC0-1.0",
+      "authors": {
+        "Amal Kumar": "All"
+      },
+      "sourceUrl": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/dark_rock/dark_rock_nor_gl_1k.jpg",
+      "sourceMd5": "ec29e852e783b353c06b630121f5d61c",
+      "sourceBytes": 1006770,
+      "sha256": "f087d550b8e33e269b36a857154b841d8862ac839bf3d6ec7564f0cc4c5669f7",
+      "bytes": 564383,
+      "processing": "sips JPEG quality 92, 1024x1024"
+    },
+    {
+      "file": "textures/stone-roughness.jpg",
+      "sourceAsset": "dark_rock",
+      "sourcePage": "https://polyhaven.com/a/dark_rock",
+      "license": "CC0-1.0",
+      "authors": {
+        "Amal Kumar": "All"
+      },
+      "sourceUrl": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/dark_rock/dark_rock_rough_1k.jpg",
+      "sourceMd5": "f5cbeea4aef60c1bab872c6f02a3c52e",
+      "sourceBytes": 585646,
+      "sha256": "5663da687f1760a10d1cb9b24aa427fced4e1c9e9aa582f9ca21948ab41650fd",
+      "bytes": 91954,
+      "processing": "sips JPEG quality 85, resized to 512x512"
+    },
+    {
+      "file": "textures/moss-color.jpg",
+      "sourceAsset": "aerial_grass_rock",
+      "sourcePage": "https://polyhaven.com/a/aerial_grass_rock",
+      "license": "CC0-1.0",
+      "authors": {
+        "Rob Tuytel": "All"
+      },
+      "sourceUrl": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/aerial_grass_rock/aerial_grass_rock_diff_1k.jpg",
+      "sourceMd5": "e920ce36afd0abff000b8366d3d768d3",
+      "sourceBytes": 666655,
+      "sha256": "826808059e77fadb89ad144c061197f7038f81e29c25cf0b62bb1fc8b27350ff",
+      "bytes": 658285,
+      "processing": "sips JPEG quality 85, 1024x1024"
+    },
+    {
+      "file": "textures/moss-normal.jpg",
+      "sourceAsset": "aerial_grass_rock",
+      "sourcePage": "https://polyhaven.com/a/aerial_grass_rock",
+      "license": "CC0-1.0",
+      "authors": {
+        "Rob Tuytel": "All"
+      },
+      "sourceUrl": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/aerial_grass_rock/aerial_grass_rock_nor_gl_1k.jpg",
+      "sourceMd5": "c8aa4c4f09b113cc7edef89ddeaccad9",
+      "sourceBytes": 904956,
+      "sha256": "9095d3149ab8bdf4f868b95e2483b8758b6dbfe0e35b7b3cae04bfe9313b60ef",
+      "bytes": 968610,
+      "processing": "sips JPEG quality 92, 1024x1024"
+    },
+    {
+      "file": "textures/moss-roughness.jpg",
+      "sourceAsset": "aerial_grass_rock",
+      "sourcePage": "https://polyhaven.com/a/aerial_grass_rock",
+      "license": "CC0-1.0",
+      "authors": {
+        "Rob Tuytel": "All"
+      },
+      "sourceUrl": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/aerial_grass_rock/aerial_grass_rock_rough_1k.jpg",
+      "sourceMd5": "f78c5cdc565f990299ae7c5a81f68cf7",
+      "sourceBytes": 362214,
+      "sha256": "935bec6eea26cea84b2242e7c9d08690f47f82d146213bdcb1ec44dba7e28e45",
+      "bytes": 98219,
+      "processing": "sips JPEG quality 85, resized to 512x512"
+    },
+    {
+      "file": "textures/leaf-ash.png",
+      "sourcePackage": "@dgreenheck/ez-tree@1.1.0",
+      "sourcePath": "src/lib/assets/leaves/ash_color.png",
+      "sourceUrl": "https://registry.npmjs.org/@dgreenheck/ez-tree/-/ez-tree-1.1.0.tgz",
+      "sourcePage": "https://github.com/dgreenheck/ez-tree",
+      "license": "MIT",
+      "authors": {
+        "Daniel Greenheck": "EZ-Tree"
+      },
+      "sha256": "5ec987db3829a839856c32c79b18a33a78f209e911cad55c65abfb77f30e2d29",
+      "bytes": 181423,
+      "processing": "unchanged"
+    },
+    {
+      "file": "environment/mountain-background.jpg",
+      "sourceAsset": "alps_field",
+      "sourcePage": "https://polyhaven.com/a/alps_field",
+      "license": "CC0-1.0",
+      "authors": {
+        "Andreas Mischok": "All"
+      },
+      "sourceUrl": "https://dl.polyhaven.org/file/ph-assets/HDRIs/extra/Tonemapped%20JPG/alps_field.jpg",
+      "sourceMd5": "6693084c7fd3831ba3c183314fbb6ade",
+      "sourceBytes": 53871215,
+      "sha256": "10a5e39911bd9e40992a62eb3f4ac6a380316c93d50d223f4aad4e38bf6256bb",
+      "bytes": 4245083,
+      "processing": "Official tonemapped panorama resized to 4096x2048, sips JPEG quality 90; no content edits"
+    }
+  ]
+}

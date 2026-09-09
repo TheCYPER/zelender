@@ -41,7 +41,10 @@ test('settings validate enums and clamp transparency', () => {
   assert.deepEqual(parseSettings({ view: 'invalid', weather: 'typhoon', sidebarOpacity: 100, sound: 'false' }), {
     view: 'room', weather: 'sunny', sidebarOpacity: 0.85, sound: false,
   });
-  assert.equal(parseSettings({sidebarOpacity:NaN}).sidebarOpacity, 0.48);
+  assert.equal(parseSettings({sidebarOpacity:NaN}).sidebarOpacity, 0.28);
+  assert.equal(parseSettings({sidebarOpacity:0.48}).sidebarOpacity, 0.28, 'old default gets the more transparent appearance');
+  assert.equal(parseSettings({sidebarOpacity:0.48,appearanceVersion:2}).sidebarOpacity, 0.48, 'new explicit choice is preserved');
+  assert.equal(parseSettings({sidebarOpacity:0.63}).sidebarOpacity, 0.63, 'custom existing opacity is preserved');
 });
 
 test('local storage failures do not crash organizer', () => {

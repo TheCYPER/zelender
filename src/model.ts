@@ -8,7 +8,7 @@ export type TodoChange =
   | { type: 'remove'; id: string };
 export const TODO_KEY = 'zelender.todos.v1';
 export const SETTINGS_KEY = 'zelender.settings.v1';
-const defaultSettings: Settings = { view: 'room', weather: 'sunny', sidebarOpacity: 0.48, sound: false };
+const defaultSettings: Settings = { view: 'room', weather: 'sunny', sidebarOpacity: 0.28, sound: false };
 
 export function dateKey(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -78,11 +78,11 @@ export function parseSettings(value: unknown): Settings {
   const saved = value as Record<string, unknown>;
   return {
     view: saved.view === 'pond' ? 'pond' : 'room',
-    weather: saved.weather === 'rain' || saved.weather === 'snow' || saved.weather === 'mist' ? saved.weather : 'sunny',
+    weather: saved.weather === 'rain' || saved.weather === 'snow' ? saved.weather : 'sunny',
     sidebarOpacity: typeof saved.sidebarOpacity === 'number' && Number.isFinite(saved.sidebarOpacity)
-      ? Math.min(0.85, Math.max(0.15, saved.sidebarOpacity)) : defaultSettings.sidebarOpacity,
+      ? (saved.appearanceVersion !== 2 && saved.sidebarOpacity === 0.48 ? 0.28 : Math.min(0.85, Math.max(0.15, saved.sidebarOpacity))) : defaultSettings.sidebarOpacity,
     sound: saved.sound === true,
   };
 }
 export function loadSettings(): Settings { return parseSettings(read(SETTINGS_KEY)); }
-export function saveSettings(settings: Settings): boolean { return write(SETTINGS_KEY, parseSettings(settings)); }
+export function saveSettings(settings: Settings): boolean { return write(SETTINGS_KEY, { ...parseSettings({ ...settings, appearanceVersion: 2 }), appearanceVersion: 2 }); }
