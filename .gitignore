@@ -1,0 +1,16 @@
+node_modules/
+dist/
+extension-dist/
+.DS_Store
+.env
+.env.*
+!.env.example
+.trellis/
+.agents/
+.codex/
+.claude/
+.cursor/
+AGENTS.md
+CLAUDE.md
+artifacts/
+*.log

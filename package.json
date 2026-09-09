@@ -1,0 +1,16 @@
+{
+  "name": "zelender",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A quiet Japanese koi garden, calendar and personal new tab.",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "check": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts",
+    "build": "vite build && node scripts/package-extension.mjs",
+    "preview": "vite preview --host 127.0.0.1"
+  },
+  "dependencies": { "three": "^0.180.0" },
+  "devDependencies": { "@types/three": "^0.180.0", "typescript": "^5.9.2", "vite": "^7.1.5", "tsx": "^4.20.5", "@types/node": "^24.3.1" }
+}

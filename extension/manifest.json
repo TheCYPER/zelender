@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Zelender · 庭",
+  "short_name": "Zelender",
+  "description": "将新标签页化作一方日式锦鲤庭院，伴随本地日历与待办事项。",
+  "version": "1.0.0",
+  "chrome_url_overrides": {
+    "newtab": "index.html"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  }
+}
