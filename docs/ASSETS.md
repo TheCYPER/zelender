@@ -46,15 +46,15 @@ introduced by our processing and no synthesized normal maps.
 `environment/forest-slope-1k.hdr` is the unchanged 1024 × 512 Radiance source
 (1.91 MB) by Andreas Mischok. Use it for reflected environment light via PMREM.
 
-`environment/mountain-background.jpg` is a real photographic panorama of
-[Alps Field](https://polyhaven.com/a/alps_field), also by Andreas Mischok and
-released under CC0. The official tonemapped JPEG was verified against the API
-MD5, then resized to 4096 × 2048 and recompressed with `sips` at JPEG quality 90.
-No objects or scenery were generated, removed, or edited. It contains forested
-mountain slopes and a clear sky; garden geometry should cover the lower meadow.
-Use `SRGBColorSpace` and an equirectangular background mapping, independently
-of the existing forest environment lighting. This asset adds a photographic
-distant view; it is not a three-dimensional mountain model.
+The background is a code-generated sky gradient; the hills, clipped plantings,
+paths and stones are continuous scene geometry. No photographic mountain plate
+or permanent distance fog is used. Mist weather alone adds low drifting patches.
+
+`applySurfaceVariation` adds world-space multiscale moss/stone variation. The
+moss shader reuses scan luminance and a second rotated sample to retain detail
+while shifting its dry yellow hue to deeper greens. It adds no extra asset files.
+Material clones must reapply this shader customization, since Three.js does not
+copy `onBeforeCompile` when cloning a material.
 
 The [EZ-Tree](https://github.com/dgreenheck/ez-tree) 1.1.0 library provides
 branching geometry, tree presets, and textured branch/leaf cards. Its release

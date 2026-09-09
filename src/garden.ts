@@ -14,6 +14,7 @@ const ATMOSPHERE: Record<Weather, { sky: string; light: number; sun: string; wat
   sunny: { sky: '#accde5', light: 3.8, sun: '#fff0d9', water: '#234c42' },
   rain: { sky: '#899d9c', light: 1.2, sun: '#cfdee2', water: '#294b49' },
   snow: { sky: '#d6dfdf', light: 2.8, sun: '#e6eef3', water: '#4c6864' },
+  mist: { sky: '#bacac5', light: 1.7, sun: '#e5eddf', water: '#31584e' },
 };
 
 /** A self-contained garden; its only persistent state is owned by the application. */
@@ -237,7 +238,8 @@ export function createGarden(host: HTMLElement, onInteraction?: (kind: 'feed' | 
     targetSun.set(atmosphere.sun);
     targetWater.set(atmosphere.water);
     if (scene.background instanceof THREE.Color) scene.background.lerp(targetSky, dt * 1.5);
-    scene.backgroundIntensity = THREE.MathUtils.lerp(scene.backgroundIntensity, weather === 'rain' ? 0.45 : 0.85, dt * 1.5);
+    const skyBrightness = weather === 'rain' ? 0.46 : weather === 'mist' ? 0.70 : 0.85;
+    scene.backgroundIntensity = THREE.MathUtils.lerp(scene.backgroundIntensity, skyBrightness, dt * 1.5);
     sunlight.color.lerp(targetSun, dt * 1.5);
     sunlight.intensity = THREE.MathUtils.lerp(sunlight.intensity, atmosphere.light, dt * 1.5);
     pondWater.color.lerp(targetWater, dt * 1.5);

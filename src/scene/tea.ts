@@ -58,6 +58,33 @@ export function createTeaCorner(room: THREE.Group, wood: THREE.MeshStandardMater
   }
   for (const z of [-0.68, 0.68]) add(table, new THREE.BoxGeometry(2.68, 0.18, 0.085), darkWood, 0, 0.71, z);
 
+  const getaPair = new THREE.Group();
+  getaPair.name = 'paired-wooden-geta';
+  getaPair.position.set(2.25, 0.72, 10.55);
+  getaPair.rotation.y = -0.28;
+  room.add(getaPair);
+  const paulownia = tabletopWood.clone();
+  paulownia.color.set('#bdb095');
+  paulownia.roughness = 0.86;
+  const thong = new THREE.MeshStandardMaterial({ color: '#293b39', roughness: 0.98 });
+  const geta = new THREE.Group();
+  geta.name = 'left-geta';
+  getaPair.add(geta);
+  // Separate ha supports, rounded wooden sole and raised Y-shaped hanao straps.
+  add(geta, new RoundedBoxGeometry(0.40, 0.095, 0.88, 4, 0.044), paulownia, 0, 0.20, 0);
+  for (const z of [-0.24, 0.23]) add(geta, new RoundedBoxGeometry(0.34, 0.15, 0.105, 2, 0.012), paulownia, 0, 0.076, z);
+  const strapPath = (side: number) => new THREE.CatmullRomCurve3([
+    new THREE.Vector3(side*0.16,0.247,0.10),new THREE.Vector3(side*0.11,0.39,-0.02),
+    new THREE.Vector3(side*0.035,0.37,-0.18),new THREE.Vector3(0,0.26,-0.25),
+  ]);
+  for (const side of [-1,1]) add(geta, new THREE.TubeGeometry(strapPath(side),16,0.025,8,false),thong,0,0,0);
+  const secondGeta = geta.clone();
+  secondGeta.name = 'right-geta';
+  secondGeta.position.set(0.57,0,0.09);
+  secondGeta.rotation.y = 0.13;
+  getaPair.add(secondGeta);
+  batchStaticMeshes(getaPair,true);
+
   const linen = new THREE.MeshStandardMaterial({ color: '#b7b09a', roughness: 1, side: THREE.DoubleSide });
   const cloth = new THREE.PlaneGeometry(0.73, 1.5, 16, 20);
   const positions = cloth.getAttribute('position');
@@ -142,7 +169,7 @@ export function createTeaCorner(room: THREE.Group, wood: THREE.MeshStandardMater
   // A single furin is hung from an offscreen cord. No architectural frame is reintroduced.
   const hanging = new THREE.Group();
   hanging.name = 'glass-furin';
-  hanging.position.set(4.4, 7.8, 11.15);
+  hanging.position.set(2.35, 7.8, 11.15);
   room.add(hanging);
   const cord = new THREE.MeshStandardMaterial({ color: '#767164', roughness: 1 });
   add(hanging, new THREE.CylinderGeometry(0.008, 0.008, 6, 8), cord, 0, 3, 0).castShadow = false;

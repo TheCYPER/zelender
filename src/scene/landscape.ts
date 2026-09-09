@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { horizontal, noiseTexture, POND, pondFraction, pondPoint, randomGenerator } from './common';
+import { horizontal, POND, pondFraction, pondPoint, randomGenerator } from './common';
 import { createGardenMaterials } from './materials';
 import { createTeaCorner } from './tea';
 import { createGardenTrees, groundHeight } from './vegetation';
@@ -23,7 +23,7 @@ function riverStone(seed: number, segments = 28, rings = 18): THREE.BufferGeomet
   const positions = geometry.getAttribute('position');
   const colors = new Float32Array(positions.count * 3);
   const color = new THREE.Color();
-  const mossTint = new THREE.Color('#768165');
+  const mossTint = new THREE.Color('#435c48');
   for (let i = 0; i < positions.count; i++) {
     const x = positions.getX(i), y = positions.getY(i), z = positions.getZ(i);
     const large = Math.sin(x * 3.3 + seed) * Math.cos(z * 2.8 + y * 1.7) * 0.10;
@@ -41,22 +41,117 @@ function riverStone(seed: number, segments = 28, rings = 18): THREE.BufferGeomet
   return geometry;
 }
 
+/** Fine angular pale gravel, rather than the boulder scan at path scale. */
+function createGravelTexture(): THREE.CanvasTexture {
+  const random = randomGenerator(81931);
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 512;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas textures are not supported by this browser.');
+  ctx.fillStyle = '#bfc3bc';
+  ctx.fillRect(0, 0, 512, 512);
+  for (let i = 0; i < 22000; i++) {
+    const x = random() * 512, y = random() * 512;
+    const r = 0.6 + random() * 2.4;
+    const shade = Math.floor(198 + random() * 53);
+    ctx.fillStyle = `rgb(${shade},${shade + 1},${shade - 3})`;
+    ctx.beginPath();
+    for (let corner = 0; corner < 5; corner++) {
+      const angle = corner / 5 * Math.PI * 2;
+      const radius = r * (0.65 + random() * 0.50);
+      const px = x + Math.cos(angle) * radius, py = y + Math.sin(angle) * radius * 0.78;
+      if (corner === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.name = 'pale-granite-gravel';
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.anisotropy = 4;
+  return texture;
+}
+
+/** Weathered standing stones have oblique fracture faces and unequal shoulders. */
+function standingStone(seed: number): THREE.BufferGeometry {
+  const geometry = new THREE.SphereGeometry(1, 32, 22);
+  const positions = geometry.getAttribute('position');
+  const colors: number[] = [], color = new THREE.Color();
+  for (let i = 0; i < positions.count; i++) {
+    const x = positions.getX(i), y = positions.getY(i), z = positions.getZ(i);
+    const shape = 1 + Math.sin(x * 4.2 + z * 2.7 + seed) * 0.06
+      + Math.cos(z * 8.0 - y * 4.5 + seed) * 0.025;
+    const shoulder = 0.93 - Math.max(0, y - 0.1) * 0.26;
+    const lean = (y + 1) * (y + 1) * (0.06 + Math.sin(seed) * 0.025);
+    // Clipping on slanted planes gives broad geological faces, not polygon noise.
+    const px = Math.max(-0.72 + y * 0.08, Math.min(0.71 - y * 0.16, x * shape * shoulder));
+    const pz = Math.max(-0.67 - y * 0.13, Math.min(0.77 + y * 0.05, z * shape));
+    const py = Math.min(0.83 + x * 0.14 - z * 0.12, y * shape);
+    positions.setXYZ(i, px + lean, py, pz);
+    const vein = Math.sin(y * 21 + x * 9 + z * 7 + seed) * 0.03;
+    color.setRGB(0.87 + vein, 0.91 + vein, 0.90 + vein);
+    if (y > 0.25) color.lerp(new THREE.Color('#5d785e'), (y - 0.25) * 0.22);
+    colors.push(color.r, color.g, color.b);
+  }
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+function addSculpturalStones(scene: THREE.Scene, material: THREE.MeshStandardMaterial): void {
+  const random = randomGenerator(32714), dummy = new THREE.Object3D(), color = new THREE.Color();
+  // Each triad has a leading vertical/leaning stone, a reclining attendant and
+  // a low anchor. They stand on planted islands, outside both gravel ribbons.
+  const placements = [
+    [-9.2, -8.0, 1.12, 1.76, 0.90], [-7.8, -8.6, 1.04, 0.78, 0.74], [-9.8, -7.0, 0.71, 0.48, 0.67],
+    [8.5, -2.5, 0.91, 1.44, 0.77], [8.1, -1.1, 0.83, 0.61, 0.71],
+    [-6.4, -17.2, 1.16, 2.28, 1.01], [-4.7, -17.4, 1.08, 1.09, 0.97], [-7.3, -15.8, 1.41, 0.56, 0.94],
+    [15.2, -11.2, 1.24, 2.58, 0.92], [16.4, -10.3, 0.94, 1.25, 0.82], [14.0, -9.7, 1.28, 0.53, 1.1],
+    [-17.8, -4.2, 1.02, 1.76, 0.80], [-16.4, -3.2, 1.28, 0.65, 0.98],
+    [1.4, -23.2, 1.12, 1.96, 0.84], [3.1, -23.4, 1.50, 0.83, 1.08],
+    [-24.1, -24.2, 1.40, 2.45, 1.14], [-22.5, -23.4, 1.37, 1.0, 1.11],
+    [22.5, -28.5, 1.50, 2.10, 1.24], [21.0, -27.1, 1.74, 0.75, 1.1],
+    [-9.1, -34.8, 1.67, 2.41, 1.32], [-7.3, -34.1, 1.14, 1.27, 1.00],
+    [12.3, -46.0, 1.98, 2.58, 1.52], [14.6, -44.9, 2.05, 1.08, 1.59],
+    [-34.0, -43.8, 2.08, 2.74, 1.55], [0.8, -61.1, 2.15, 2.40, 1.88],
+  ];
+  for (let kind = 0; kind < 3; kind++) {
+    const subset = placements.filter((_, index) => index % 3 === kind);
+    const rocks = new THREE.InstancedMesh(standingStone(31 + kind * 29), material, subset.length);
+    rocks.name = `sculptural-garden-stones-${kind}`;
+    subset.forEach(([x, z, sx, sy, sz], index) => {
+      dummy.position.set(x, groundHeight(x, z) + sy * 0.65, z);
+      dummy.rotation.set((random() - 0.5) * 0.19, random() * Math.PI * 2, (random() - 0.5) * 0.30);
+      dummy.scale.set(sx, sy, sz);
+      dummy.updateMatrix();
+      rocks.setMatrixAt(index, dummy.matrix);
+      const warmth = random();
+      color.setRGB(0.81 + warmth * 0.19, 0.88 + warmth * 0.10, 0.91 + warmth * 0.04);
+      rocks.setColorAt(index, color);
+    });
+    rocks.castShadow = rocks.receiveShadow = true;
+    rocks.computeBoundingSphere();
+    scene.add(rocks);
+  }
+}
+
 function terrainGeometry(): THREE.BufferGeometry {
-  const angularSegments = 160, bands = 60;
+  const angularSegments = 176, bands = 86;
   const vertices: number[] = [], uvs: number[] = [], colors: number[] = [], indices: number[] = [];
-  const color = new THREE.Color(), forestColor = new THREE.Color('#8f8c78');
+  const color = new THREE.Color(), shadeColor = new THREE.Color('#c5d3c8');
   for (let band = 0; band <= bands; band++) {
     const spread = Math.pow(band / bands, 1.8);
     for (let i = 0; i <= angularSegments; i++) {
       const angle = i / angularSegments * Math.PI * 2;
       const shore = pondPoint(angle, 1.004);
-      const x = THREE.MathUtils.lerp(shore.x, Math.cos(angle) * 155, spread);
-      const z = THREE.MathUtils.lerp(shore.z, Math.sin(angle) * 155, spread);
+      const x = THREE.MathUtils.lerp(shore.x, Math.cos(angle) * 205, spread);
+      const z = THREE.MathUtils.lerp(shore.z, Math.sin(angle) * 205, spread);
       vertices.push(x, groundHeight(x, z), z);
       uvs.push(x / 5, z / 5);
       const patch = Math.sin(x * 0.51 + z * 0.19) * Math.cos(z * 0.39 - x * 0.17);
       const woods = THREE.MathUtils.smoothstep(-z, 8, 30);
-      color.set('#eff7d1').lerp(forestColor, woods * 0.27 + Math.max(0, patch) * 0.14);
+      color.set('#eff2ed').lerp(shadeColor, woods * 0.25 + Math.max(0, patch) * 0.28);
       colors.push(color.r, color.g, color.b);
       if (band < bands && i < angularSegments) {
         const a = band * (angularSegments + 1) + i, b = a + angularSegments + 1;
@@ -73,7 +168,7 @@ function terrainGeometry(): THREE.BufferGeometry {
   return geometry;
 }
 
-function addUnderstory(scene: THREE.Scene): void {
+function addUnderstory(scene: THREE.Scene, onGravel: (x: number, z: number) => boolean): void {
   const random = randomGenerator(8351), dummy = new THREE.Object3D(), color = new THREE.Color();
   const positions: number[] = [], uvs: number[] = [], indices: number[] = [];
   for (let i = 0; i <= 6; i++) {
@@ -89,17 +184,17 @@ function addUnderstory(scene: THREE.Scene): void {
   bladeGeometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
   bladeGeometry.setIndex(indices);
   bladeGeometry.computeVertexNormals();
-  const grass = new THREE.InstancedMesh(bladeGeometry, new THREE.MeshStandardMaterial({ color: '#8c9463', roughness: 0.91, side: THREE.DoubleSide }), 1200);
+  const grass = new THREE.InstancedMesh(bladeGeometry, new THREE.MeshStandardMaterial({ color: '#819889', roughness: 0.91, side: THREE.DoubleSide }), 1200);
   for (let i = 0; i < grass.count; i++) {
     const patch = Math.floor(random() * 13) / 13 * Math.PI * 2;
     const p = pondPoint(patch + (random() - 0.5) * 0.16, 1.12 + random() * 0.44);
     if (p.z > 7.4) p.z -= 1.5;
     dummy.position.set(p.x, groundHeight(p.x, p.z) - 0.025, p.z);
     dummy.rotation.set((random() - 0.5) * 0.19, random() * Math.PI * 2, (random() - 0.5) * 0.22);
-    dummy.scale.setScalar(0.32 + random() * 0.69);
+    dummy.scale.setScalar(onGravel(p.x, p.z) ? 0 : 0.32 + random() * 0.69);
     dummy.updateMatrix();
     grass.setMatrixAt(i, dummy.matrix);
-    color.setHSL(0.20 + random() * 0.04, 0.21 + random() * 0.10, 0.40 + random() * 0.17);
+    color.setHSL(0.29 + random() * 0.04, 0.22 + random() * 0.13, 0.34 + random() * 0.14, THREE.SRGBColorSpace);
     grass.setColorAt(i, color);
   }
   grass.receiveShadow = true;
@@ -120,14 +215,14 @@ function addUnderstory(scene: THREE.Scene): void {
   const frond = mergeGeometries(frondParts);
   frondParts.forEach((geometry) => geometry.dispose());
   if (!frond) return;
-  const ferns = new THREE.InstancedMesh(frond, new THREE.MeshStandardMaterial({ color: '#6c8453', roughness: 0.9, side: THREE.DoubleSide }), 154);
+  const ferns = new THREE.InstancedMesh(frond, new THREE.MeshStandardMaterial({ color: '#5d7c60', roughness: 0.9, side: THREE.DoubleSide }), 154);
   for (let i = 0; i < ferns.count; i++) {
     const r = randomGenerator(Math.floor(i / 7) * 41 + 911), angle = r() * Math.PI * 2;
     const p = pondPoint(angle, 1.24 + r() * 1.25);
     if (p.z > 7.4) p.z = -5.9 - r() * 8;
     dummy.position.set(p.x, groundHeight(p.x, p.z), p.z);
     dummy.rotation.set(0, i % 7 / 7 * Math.PI * 2 + r(), 0);
-    dummy.scale.setScalar(0.55 + random() * 0.8);
+    dummy.scale.setScalar(onGravel(p.x, p.z) ? 0 : 0.55 + random() * 0.8);
     dummy.updateMatrix();
     ferns.setMatrixAt(i, dummy.matrix);
     color.setRGB(0.60 + random() * 0.3, 0.72 + random() * 0.25, 0.54 + random() * 0.2);
@@ -186,11 +281,10 @@ export function createLandscape(scene: THREE.Scene): Landscape {
   const snow = new THREE.Group();
   snow.visible = false;
   scene.add(snow);
-  const terrain = terrainGeometry(), groundMaterial = moss.clone();
-  groundMaterial.color.set('#dce9c4');
+  const terrain = terrainGeometry(), groundMaterial = moss;
   groundMaterial.vertexColors = true;
   const ground = new THREE.Mesh(terrain, groundMaterial);
-  ground.name = 'continuous-woodland-ground';
+  ground.name = 'continuous-layered-garden-ground';
   ground.receiveShadow = true;
   scene.add(ground);
   const snowTerrain = new THREE.Mesh(terrain, new THREE.MeshStandardMaterial({ color: '#e1e6df', roughness: 1 }));
@@ -248,47 +342,86 @@ export function createLandscape(scene: THREE.Scene): Landscape {
   }
   pebbles.receiveShadow = true;
   scene.add(pebbles);
-  addUnderstory(scene);
-  // A pale gravel ribbon separates moss islands and turns behind the pond. Its
-  // asymmetry and grouped stones are borrowed from the user's garden references.
-  const gardenPath = new THREE.CatmullRomCurve3([
-    new THREE.Vector3(9.4, 0, 7.4), new THREE.Vector3(10.7, 0, 1.8),
-    new THREE.Vector3(11.7, 0, -5.2), new THREE.Vector3(5.7, 0, -8.9),
-    new THREE.Vector3(-1.0, 0, -8.0), new THREE.Vector3(-8.5, 0, -9.3),
-    new THREE.Vector3(-13.8, 0, -14.7), new THREE.Vector3(-18.0, 0, -27.0),
-  ]);
-  const gravelPositions: number[] = [], gravelUvs: number[] = [], gravelIndices: number[] = [];
-  for (let i = 0; i <= 120; i++) {
-    const t = i / 120, p = gardenPath.getPointAt(t), tangent = gardenPath.getTangentAt(t);
-    const width = 0.76 + Math.sin(t * 8.5) * 0.15;
-    for (const side of [-1, 1]) {
-      const x = p.x + tangent.z * width * side, z = p.z - tangent.x * width * side;
-      gravelPositions.push(x, groundHeight(x, z) + 0.026, z);
-      gravelUvs.push(side === -1 ? 0 : 1, t * 22);
+  // Two generous white-gravel promenades wrap the pond and disappear between
+  // planted contours. Crosswise subdivisions keep the edges seated on the soil.
+  const paths = [
+    { name: 'east-gravel-promenade', width: 1.65, points: [[10.2, 8], [10.5, 1.5], [12.3, -5.8], [8.4, -10.1], [0.2, -10.3], [-8.5, -11.1], [-16.5, -19], [-12.4, -29], [-2.0, -40], [8.0, -56]] },
+    { name: 'west-gravel-promenade', width: 1.90, points: [[-11.0, 8.0], [-11.8, 2.2], [-13.8, -4.3], [-15.2, -10.5], [-20.8, -19.7], [-27.5, -32.0], [-23.1, -43.0]] },
+  ];
+  const gravelMap = createGravelTexture();
+  const gravelMaterial = new THREE.MeshStandardMaterial({
+    color: '#f3f4ec', map: gravelMap, bumpMap: gravelMap, bumpScale: 0.045,
+    roughness: 0.98, envMapIntensity: 0.28,
+  });
+  const pathCurves: THREE.CatmullRomCurve3[] = [];
+  const gravelFootprints: { x: number; z: number; radius: number }[] = [];
+  paths.forEach((path, pathIndex) => {
+    const curve = new THREE.CatmullRomCurve3(path.points.map(([x, z]) => new THREE.Vector3(x, 0, z)));
+    pathCurves.push(curve);
+    const positions: number[] = [], uvs: number[] = [], indices: number[] = [];
+    const rows = 192, columns = 8;
+    for (let i = 0; i <= rows; i++) {
+      const t = i / rows, point = curve.getPointAt(t), tangent = curve.getTangentAt(t);
+      const width = path.width + Math.sin(t * 14 + pathIndex) * 0.34 + Math.sin(t * 6.3 + 1.1) * 0.24;
+      if (i % 2 === 0) gravelFootprints.push({ x: point.x, z: point.z, radius: width + 0.14 });
+      for (let j = 0; j <= columns; j++) {
+        const across = j / columns * 2 - 1;
+        const edge = width + Math.sin(t * 217 + pathIndex * 13) * 0.035;
+        const x = point.x + tangent.z * across * edge;
+        const z = point.z - tangent.x * across * edge;
+        positions.push(x, groundHeight(x, z) + 0.028, z);
+        uvs.push(x * 1.3, z * 1.3);
+        if (i < rows && j < columns) {
+          const a = i * (columns + 1) + j, b = a + columns + 1;
+          indices.push(a, b, a + 1, a + 1, b, b + 1);
+        }
+      }
     }
-    if (i < 120) gravelIndices.push(i * 2, i * 2 + 2, i * 2 + 1, i * 2 + 1, i * 2 + 2, i * 2 + 3);
-  }
-  const gravelGeometry = new THREE.BufferGeometry();
-  gravelGeometry.setAttribute('position', new THREE.Float32BufferAttribute(gravelPositions, 3));
-  gravelGeometry.setAttribute('uv', new THREE.Float32BufferAttribute(gravelUvs, 2));
-  gravelGeometry.setIndex(gravelIndices);
-  gravelGeometry.computeVertexNormals();
-  const gravelMap = noiseTexture('stone', 126);
-  gravelMap.repeat.set(1, 1);
-  const gravel = new THREE.Mesh(gravelGeometry, new THREE.MeshStandardMaterial({ color: '#c9c6ae', map: gravelMap, bumpMap: gravelMap, bumpScale: 0.019, roughness: 0.98, side: THREE.DoubleSide }));
-  gravel.name = 'pale-garden-gravel-path';
-  gravel.receiveShadow = true;
-  scene.add(gravel);
-  for (let i = 0; i < 36; i++) {
-    const p = gardenPath.getPointAt(i / 39);
-    const x = p.x, z = p.z;
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+    const pathMesh = new THREE.Mesh(geometry, gravelMaterial);
+    pathMesh.name = path.name;
+    pathMesh.receiveShadow = true;
+    scene.add(pathMesh);
+  });
+  // Low, irregular granite treads occur only on the near west branch; the
+  // majority of each path remains a quiet expanse of white gravel.
+  for (let i = 0; i < 15; i++) {
+    const p = pathCurves[1].getPointAt(0.025 + i / 41);
     const step = new THREE.Mesh(rockGeometries[i % 3], stone);
-    step.scale.set(0.58 + random() * 0.2, 0.075 + random() * 0.035, 0.43 + random() * 0.07);
-    step.position.set(x, groundHeight(x, z) + 0.045, z);
-    step.rotation.y = random() * 0.65;
+    step.scale.set(0.56 + random() * 0.22, 0.055 + random() * 0.025, 0.40 + random() * 0.11);
+    step.position.set(p.x, groundHeight(p.x, p.z) + 0.064, p.z);
+    step.rotation.y = random() * 1.6;
     step.castShadow = step.receiveShadow = true;
     scene.add(step);
   }
+  const gravelChips = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 0),
+    new THREE.MeshStandardMaterial({ color: '#dedfd8', roughness: 1, envMapIntensity: 0.28 }), 1500);
+  gravelChips.name = 'individual-white-gravel-chips';
+  for (let i = 0; i < gravelChips.count; i++) {
+    const pathIndex = i % 2, t = random() * 0.53;
+    const point = pathCurves[pathIndex].getPointAt(t), tangent = pathCurves[pathIndex].getTangentAt(t);
+    const across = (random() - 0.5) * paths[pathIndex].width * 1.65;
+    const x = point.x + tangent.z * across, z = point.z - tangent.x * across;
+    dummy.position.set(x, groundHeight(x, z) + 0.035, z);
+    dummy.rotation.set(random(), random() * Math.PI * 2, random());
+    const size = 0.022 + random() * 0.028;
+    dummy.scale.set(size * 1.30, size * 0.47, size);
+    dummy.updateMatrix();
+    gravelChips.setMatrixAt(i, dummy.matrix);
+    const shade = 0.80 + random() * 0.20;
+    color.setRGB(shade, shade, shade * (0.97 + random() * 0.03));
+    gravelChips.setColorAt(i, color);
+  }
+  gravelChips.receiveShadow = true;
+  gravelChips.computeBoundingSphere();
+  scene.add(gravelChips);
+  addUnderstory(scene, (x, z) => gravelFootprints.some((sample) =>
+    (x - sample.x) ** 2 + (z - sample.z) ** 2 < sample.radius ** 2));
+  addSculpturalStones(scene, rockMaterial);
   const planting = createGardenTrees(scene, bark);
   planting.foliage.push(...createGardenShrubs(scene));
   const padShape = new THREE.Shape();

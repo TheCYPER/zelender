@@ -40,6 +40,13 @@ canvas { display: block; }
 
 .ui-root { position: absolute; inset: 0; --sidebar-opacity: 0.28; }
 .glass { background: rgb(28 39 31 / 45%); border: 1px solid rgb(239 236 215 / 17%); box-shadow: 0 12px 38px rgb(9 21 16 / 12%), inset 0 1px 0 rgb(255 255 242 / 4%); backdrop-filter: blur(12px) saturate(0.85); -webkit-backdrop-filter: blur(12px) saturate(0.85); }
+.garden-intro { position: absolute; left: 32px; top: 29px; color: #f0efdf; text-shadow: 0 1px 2px rgb(9 28 23 / 90%), 0 2px 8px rgb(9 28 23 / 70%), 0 5px 24px rgb(9 28 23 / 45%); }
+.garden-intro h1 { margin: 0; font: 400 29px/1.4 var(--serif); letter-spacing: 0.14em; }
+.garden-intro p { margin: 10px 0 0; font: 12px/1.8 var(--serif); letter-spacing: 0.1em; color: #dce4d8; }
+.garden-caption { position: absolute; left: 32px; bottom: 30px; text-shadow: 0 1px 6px rgb(9 28 23 / 80%); }
+.garden-caption p { margin: 0; }
+.garden-caption-line { font: 13px/1.8 var(--serif); letter-spacing: 0.08em; color: #e6e9dd; }
+.garden-caption .garden-caption-help { margin-top: 6px; font-size: 9px; line-height: 1.8; color: #c8d3c5; }
 .garden-header { position: absolute; right: 30px; top: 26px; display: flex; align-items: center; gap: 15px; }
 .clock-section { text-align: right; text-shadow: 0 1px 4px rgb(15 25 17 / 65%), 0 2px 15px rgb(15 25 17 / 40%); }
 .clock-time { display: block; font: 400 32px/1.05 var(--serif); letter-spacing: -0.025em; font-variant-numeric: tabular-nums; }
@@ -50,7 +57,10 @@ canvas { display: block; }
 .organizer-toggle:hover, .organizer-toggle[aria-expanded="true"] { background: rgb(35 48 36 / 50%); }
 .organizer-toggle .icon { width: 19px; height: 19px; }
 
-.organizer { pointer-events: auto; position: absolute; top: 98px; right: 28px; bottom: 90px; width: 308px; max-height: 680px; display: flex; flex-direction: column; padding: 21px 25px 17px; border-radius: 12px; background: rgb(28 39 31 / var(--sidebar-opacity)); text-shadow: 0 1px 4px rgb(8 18 12 / 35%); }
+.organizer { pointer-events: auto; position: absolute; top: 98px; right: 28px; bottom: 90px; width: 308px; max-height: 680px; display: flex; flex-direction: column; padding: 21px 25px 17px; border-radius: 12px; background: rgb(28 39 31 / var(--sidebar-opacity)); text-shadow: 0 1px 4px rgb(8 18 12 / 35%); scrollbar-width: thin; scrollbar-color: rgb(210 223 201 / 25%) transparent; }
+.organizer::-webkit-scrollbar, .todo-scroll::-webkit-scrollbar, .settings-popover::-webkit-scrollbar { width: 4px; height: 4px; }
+.organizer::-webkit-scrollbar-track, .todo-scroll::-webkit-scrollbar-track, .settings-popover::-webkit-scrollbar-track { background: transparent; }
+.organizer::-webkit-scrollbar-thumb, .todo-scroll::-webkit-scrollbar-thumb, .settings-popover::-webkit-scrollbar-thumb { background: rgb(210 223 201 / 25%); border-radius: 4px; }
 .organizer-heading { display: flex; align-items: center; gap: 13px; margin-bottom: 19px; }
 .organizer-title { font: 21px var(--serif); letter-spacing: 0.12em; }
 .organizer-close { margin-left: auto; }
@@ -124,9 +134,9 @@ canvas { display: block; }
 .is-focus > :not(.focus-exit) * { pointer-events: none; }
 
 .popover { position: absolute; pointer-events: auto; bottom: 84px; border-radius: 12px; background: rgb(31 43 34 / 82%); }
-.weather-popover { width: 342px; left: 50%; transform: translateX(-50%); padding: 20px; }
+.weather-popover { width: 370px; left: 50%; transform: translateX(-50%); padding: 20px; }
 .popover-heading { margin: 0 0 17px; font: 17px var(--serif); letter-spacing: 0.07em; }
-.weather-options { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.weather-options { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
 .weather-option { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px; padding: 14px 2px 11px; border: 1px solid transparent; border-radius: 7px; }
 .weather-option:hover { background: rgb(229 234 211 / 8%); }
 .weather-option[aria-pressed="true"] { border-color: rgb(222 230 197 / 37%); background: rgb(229 234 211 / 9%); }
@@ -173,6 +183,8 @@ kbd { font-family: inherit; font-size: 9px; border: 1px solid rgb(226 234 206 / 
 .webgl-notice { position: absolute; bottom: 210px; left: 44px; width: min(350px, calc(100% - 70px)); padding: 20px; color: #e5ead7; background: rgb(24 43 31 / 60%); border: 1px solid rgb(233 236 215 / 20%); border-radius: 8px; font-size: 12px; line-height: 1.8; }
 
 @media (max-width: 1100px) {
+  .garden-intro { left: 25px; top: 26px; }
+  .garden-caption { left: 25px; bottom: 86px; }
   .garden-header { right: 24px; top: 24px; }
   .organizer { right: 22px; }
   .settings-popover { left: auto; right: 24px; }
@@ -186,7 +198,7 @@ kbd { font-family: inherit; font-size: 9px; border: 1px solid rgb(226 234 206 / 
   .calendar-day { width: 28px; height: 28px; }
   .calendar-section { padding-bottom: 12px; }
   .calendar-weekdays { margin-bottom: 4px; }
-  .todo-section { padding-top: 15px; flex: 1 0 165px; }
+  .todo-section { padding-top: 15px; flex: 1 1 165px; min-height: 135px; }
   .todo-empty { min-height: 76px; padding: 7px 0; }
   .todo-empty > .icon { width: 20px; height: 20px; margin-bottom: 6px; }
   .todo-empty p { font-size: 15px; margin-bottom: 6px; }
@@ -196,6 +208,11 @@ kbd { font-family: inherit; font-size: 9px; border: 1px solid rgb(226 234 206 / 
 }
 
 @media (max-width: 760px) {
+  .garden-intro { left: 21px; top: max(23px, env(safe-area-inset-top)); }
+  .garden-intro h1 { font-size: 24px; letter-spacing: 0.1em; }
+  .garden-intro p { margin-top: 5px; font-size: 10px; letter-spacing: 0.04em; }
+  .garden-caption { left: 23px; bottom: 92px; }
+  .is-organizer-open .garden-caption { display: none; }
   .garden-header { right: 20px; top: max(22px, env(safe-area-inset-top)); gap: 12px; }
   .clock-time { font-size: 29px; }
   .clock-date { font-size: 9px; margin-top: 6px; }
@@ -223,14 +240,27 @@ kbd { font-family: inherit; font-size: 9px; border: 1px solid rgb(226 234 206 / 
   .view-button, .toolbar-button { min-height: 44px; padding: 0 10px; gap: 5px; }
   .toolbar-button.icon-only { width: 40px; }
   .toolbar-divider { margin: 0 3px; }
-  .weather-popover { width: min(342px, calc(100% - 30px)); bottom: 84px; }
+  .weather-popover { width: min(370px, calc(100% - 30px)); bottom: 84px; padding: 18px 14px; }
+  .weather-options { gap: 3px; }
+  .weather-description { font-size: 8px; letter-spacing: -0.04em; }
   .settings-popover { width: min(334px, calc(100% - 30px)); right: 15px; bottom: 84px; max-height: calc(var(--visible-height, 100dvh) - 108px); }
   .toast { bottom: 91px; padding: 12px 17px; width: max-content; font-size: 11px; }
   .focus-exit { right: 19px; bottom: max(20px, env(safe-area-inset-bottom)); width: 44px; height: 44px; }
   .webgl-notice { bottom: 150px; left: 24px; }
 }
 
+@media (max-height: 740px) and (min-width: 761px) {
+  .todo-empty { min-height: 0; padding: 2px 0; }
+  .todo-empty > .icon { display: none; }
+  .todo-empty p { font-size: 14px; margin-bottom: 4px; }
+  .todo-empty > span { font-size: 9px; }
+}
+
 @media (max-width: 380px) {
+  .garden-intro h1 { font-size: 22px; }
+  .garden-intro p { font-size: 9px; }
+  .garden-header { right: 17px; gap: 9px; }
+  .clock-time { font-size: 26px; }
   .view-button, .toolbar-button { padding: 0 8px; }
   .organizer { padding-left: 20px; padding-right: 20px; }
 }

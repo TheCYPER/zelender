@@ -78,7 +78,7 @@ export function parseSettings(value: unknown): Settings {
   const saved = value as Record<string, unknown>;
   return {
     view: saved.view === 'pond' ? 'pond' : 'room',
-    weather: saved.weather === 'rain' || saved.weather === 'snow' ? saved.weather : 'sunny',
+    weather: saved.weather === 'rain' || saved.weather === 'snow' || saved.weather === 'mist' ? saved.weather : 'sunny',
     sidebarOpacity: typeof saved.sidebarOpacity === 'number' && Number.isFinite(saved.sidebarOpacity)
       ? (saved.appearanceVersion !== 2 && saved.sidebarOpacity === 0.48 ? 0.28 : Math.min(0.85, Math.max(0.15, saved.sidebarOpacity))) : defaultSettings.sidebarOpacity,
     sound: saved.sound === true,

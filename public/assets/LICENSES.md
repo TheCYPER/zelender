@@ -18,14 +18,10 @@ modification, and redistribution, including with commercial projects.
 | `textures/moss-*.jpg` | [Aerial Grass Rock](https://polyhaven.com/a/aerial_grass_rock) | Rob Tuytel |
 | `textures/bark-*.jpg` | [Bark Brown 02](https://polyhaven.com/a/bark_brown_02) | Rob Tuytel |
 | `environment/forest-slope-1k.hdr` | [Forest Slope](https://polyhaven.com/a/forest_slope) | Andreas Mischok |
-| `environment/mountain-background.jpg` | [Alps Field](https://polyhaven.com/a/alps_field) | Andreas Mischok |
 
 Each material includes albedo, OpenGL tangent-space normals, and roughness.
 JPEGs were recompressed for distribution; roughness was resized to 512 × 512.
 The 1K HDR remains byte-identical to the source.
-The mountain background is the official tonemapped Alps Field panorama,
-resized to 4096 × 2048 and recompressed to JPEG quality 90. Its photographic
-content is unchanged; it provides a distant view rather than scene lighting.
 
 ## EZ-Tree — MIT
 

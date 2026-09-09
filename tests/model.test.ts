@@ -45,6 +45,7 @@ test('settings validate enums and clamp transparency', () => {
   assert.equal(parseSettings({sidebarOpacity:0.48}).sidebarOpacity, 0.28, 'old default gets the more transparent appearance');
   assert.equal(parseSettings({sidebarOpacity:0.48,appearanceVersion:2}).sidebarOpacity, 0.48, 'new explicit choice is preserved');
   assert.equal(parseSettings({sidebarOpacity:0.63}).sidebarOpacity, 0.63, 'custom existing opacity is preserved');
+  assert.equal(parseSettings({weather:'mist'}).weather, 'mist', 'saved mist preference remains valid');
 });
 
 test('local storage failures do not crash organizer', () => {
@@ -88,6 +89,9 @@ test('tasks and settings survive reload and corrupt saved JSON recovers safely',
     const settings = { view: 'pond', weather: 'rain', sidebarOpacity: 0.6, sound: false } as const;
     assert.equal(saveSettings(settings), true);
     assert.deepEqual(loadSettings(), settings);
+    const mistSettings = { ...settings, weather: 'mist' } as const;
+    assert.equal(saveSettings(mistSettings), true);
+    assert.deepEqual(loadSettings(), mistSettings, 'mist survives a storage round trip');
     entries.set(TODO_KEY, '{broken');
     entries.set(SETTINGS_KEY, 'null');
     assert.deepEqual(loadTodos(), []);

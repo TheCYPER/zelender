@@ -36,7 +36,7 @@ function createNiwaki(scene: THREE.Scene, bark: THREE.MeshStandardMaterial, wind
   const group = new THREE.Group();
   group.name = 'trained-japanese-pine';
   group.position.set(8.1, groundHeight(8.1, -6.4), -6.4);
-  group.scale.set(0.90, 0.88, 0.90);
+  group.scale.set(1.05, 1.27, 1.05);
   scene.add(group);
   const trunkPoints = [v(0,0,0),v(-0.24,0.8,0.08),v(-0.08,1.65,-0.06),v(0.40,2.55,0.07),v(0.12,3.35,-0.03),v(0.39,4.05,0.04),v(0.19,4.99,-0.09)];
   const woodParts: THREE.BufferGeometry[] = [curvedLimb(trunkPoints, 0.34, 0.045, 46)];
@@ -151,24 +151,34 @@ function createNiwaki(scene: THREE.Scene, bark: THREE.MeshStandardMaterial, wind
   return [needles];
 }
 
-/** Gentle terrain rises leave the pool's original shoreline and interaction shape intact. */
+/** Continuous planted contours, with a level shoreline and no backdrop seam. */
 export function groundHeight(x: number, z: number): number {
   const distance = Math.hypot(x * 0.74, z * 0.93);
   const slope = THREE.MathUtils.smoothstep(distance, 8, 26);
-  const roll = 0.85 + Math.sin(x * 0.15 + z * 0.08) * 0.42 + Math.cos(z * 0.21 - x * 0.06) * 0.32;
-  // The planted garden sits above the distant valley. Land falls away behind
-  // its low planting, so an empty repeated turf slope cannot obscure the hills.
-  const farRise = -THREE.MathUtils.smoothstep(distance, 18, 44) * 18;
-  const island = (cx: number, cz: number, radius: number, height: number) => height * Math.exp(-((x - cx) ** 2 + (z - cz) ** 2) / (radius * radius));
-  const mossIslands = island(-8.1, -5.5, 3.2, 0.48) + island(7.3, -7.1, 3.7, 0.57) + island(-2.5, -11, 2.5, 0.26);
+  const roll = 0.60 + Math.sin(x * 0.15 + z * 0.08) * 0.30 + Math.cos(z * 0.21 - x * 0.06) * 0.22;
+  const island = (cx: number, cz: number, rx: number, rz: number, height: number) =>
+    height * Math.exp(-(((x - cx) / rx) ** 2) - ((z - cz) / rz) ** 2);
+  const mossIslands = island(-8.1, -5.5, 3.2, 3.2, 0.48)
+    + island(7.3, -7.1, 3.7, 3.7, 0.57)
+    + island(-2.5, -11, 2.5, 2.5, 0.26)
+    + island(-14, -17, 7, 4, 1.15)
+    + island(13, -22, 8, 6, 1.50);
+  // Broad, overlapping planted ridges carry perspective into the landscape.
+  // Their valley stays off-centre so the white paths disappear around contours.
+  const distantGround = THREE.MathUtils.smoothstep(distance, 18, 80) * 2.4
+    + island(-31, -43, 22, 16, 3.3)
+    + island(25, -57, 28, 20, 5.0)
+    + island(-35, -94, 38, 29, 9.5)
+    + island(43, -121, 48, 36, 14.0)
+    + island(-81, -135, 35, 34, 12.0);
   const clearShore = THREE.MathUtils.smoothstep(pondFraction(x, z), 1.06, 1.38);
-  return -0.024 + slope * roll + farRise + mossIslands * clearShore;
+  return -0.024 + slope * roll + (mossIslands + distantGround) * clearShore;
 }
 
 /**
- * EZ-Tree supplies continuous branching and photographic cutout foliage. Three
- * low, spreading specimen trees sit in a deliberately open garden. Borrowed
- * distant scenery is composed independently, without a row of forest trunks.
+ * EZ-Tree supplies continuous branching and photographic cutout foliage. A small
+ * collection of taller, spreading specimens establishes the garden scale. Low
+ * clipped planting continues behind them without introducing a forest of trunks.
  */
 export function createGardenTrees(scene: THREE.Scene, bark: THREE.MeshStandardMaterial) {
   const random = randomGenerator(6427);
@@ -215,7 +225,7 @@ export function createGardenTrees(scene: THREE.Scene, bark: THREE.MeshStandardMa
     const importedLeafMaterial = tree.leavesMesh.material as THREE.MeshPhongMaterial;
     const leafMaterial = new THREE.MeshStandardMaterial({
       map: importedLeafMaterial.map,
-      color: preset.startsWith('Pine') ? '#b3bd9c' : '#c7c5a4',
+      color: preset.startsWith('Pine') ? '#b3bd9c' : '#c0ccbb',
       roughness: 0.94,
       side: THREE.DoubleSide,
       alphaTest: 0.45,
@@ -279,8 +289,8 @@ export function createGardenTrees(scene: THREE.Scene, bark: THREE.MeshStandardMa
   };
 
   const p = (x: number, z: number, height: number, breadth = 1): Planting => ({ x, z, height, breadth, yaw: random() * Math.PI * 2 });
-  makeGrove('Ash Medium', 38734, [p(-8.4,-4.6,5.6,1.0)]);
-  makeGrove('Oak Medium', 12461, [p(-1.0,-11.5,4.0,1.10)]);
+  makeGrove('Ash Medium', 38734, [p(-10.4,-5.8,8.2,0.94), p(16.2,-24.0,8.6,0.82), p(-23.0,-35.0,9.0,0.92)]);
+  makeGrove('Oak Medium', 12461, [p(-2.1,-17.5,6.4,1.12), p(7.4,-36.5,8.2,1.05)]);
   foliage.push(...createNiwaki(scene, bark, wind));
   return { foliage, update(time: number, reducedMotion: boolean) { wind.value = reducedMotion ? 0 : time; } };
 }

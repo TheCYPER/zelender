@@ -212,21 +212,6 @@
       "sha256": "5ec987db3829a839856c32c79b18a33a78f209e911cad55c65abfb77f30e2d29",
       "bytes": 181423,
       "processing": "unchanged"
-    },
-    {
-      "file": "environment/mountain-background.jpg",
-      "sourceAsset": "alps_field",
-      "sourcePage": "https://polyhaven.com/a/alps_field",
-      "license": "CC0-1.0",
-      "authors": {
-        "Andreas Mischok": "All"
-      },
-      "sourceUrl": "https://dl.polyhaven.org/file/ph-assets/HDRIs/extra/Tonemapped%20JPG/alps_field.jpg",
-      "sourceMd5": "6693084c7fd3831ba3c183314fbb6ade",
-      "sourceBytes": 53871215,
-      "sha256": "10a5e39911bd9e40992a62eb3f4ac6a380316c93d50d223f4aad4e38bf6256bb",
-      "bytes": 4245083,
-      "processing": "Official tonemapped panorama resized to 4096x2048, sips JPEG quality 90; no content edits"
     }
   ]
 }

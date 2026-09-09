@@ -1,4 +1,4 @@
-export type Weather = 'sunny' | 'rain' | 'snow';
+export type Weather = 'sunny' | 'rain' | 'snow' | 'mist';
 export type ViewMode = 'room' | 'pond';
 export interface GardenController {
   setView(view: ViewMode): void;
