@@ -167,13 +167,6 @@ export function createTeaCorner(room: THREE.Group, wood: THREE.MeshStandardMater
   const sweet = new THREE.MeshStandardMaterial({ color: '#aa9a77', roughness: 0.93 });
   for (const x of [-0.99, -0.77]) add(table, new THREE.SphereGeometry(0.095, 20, 12), sweet, x, 1.025, 0.12).scale.y = 0.6;
 
-  const steamGeometry = new THREE.BufferGeometry();
-  const steamPositions = new Float32Array(18 * 3);
-  steamGeometry.setAttribute('position', new THREE.BufferAttribute(steamPositions, 3));
-  const steam = new THREE.Points(steamGeometry, new THREE.PointsMaterial({ map: softTexture(), color: '#e5e8df', size: 0.19, transparent: true, opacity: 0.11, depthWrite: false }));
-  steam.position.set(0, 0.57, 0);
-  pot.add(steam);
-
   // A single furin is hung from an offscreen cord. No architectural frame is reintroduced.
   const hanging = new THREE.Group();
   hanging.name = 'glass-furin';
@@ -209,12 +202,12 @@ export function createTeaCorner(room: THREE.Group, wood: THREE.MeshStandardMater
   inkStroke.rotation.z = -0.06;
 
   // Only furniture, tray and saucers are static. Keep complete ceramic subtrees
-  // together so dragging never leaves the spout, handle, tea or steam behind.
+  // together so dragging never leaves the spout, handle or liquid behind.
   const movable = [pot, ...cups.map(cup => cup.object)];
   movable.forEach(object => object.removeFromParent());
   batchStaticMeshes(table, true);
   movable.forEach(object => tray.add(object));
-  const teaInteraction = createTeaInteraction(tray, pot, cups);
+  const teaInteraction = createTeaInteraction(tray, pot, cups, softTexture());
   const bellAcross: Pendulum = { angle: 0, velocity: 0 };
   const bellDepth: Pendulum = { angle: 0, velocity: 0 };
   const tongue: Pendulum = { angle: 0, velocity: 0 };
@@ -272,14 +265,6 @@ export function createTeaCorner(room: THREE.Group, wood: THREE.MeshStandardMater
       chime.rotation.x = bellDepth.angle;
       clapper.rotation.z = tongue.angle;
       paper.rotation.y = -0.18 + paperTwist.angle;
-      steam.visible = !reducedMotion;
-      for (let i = 0; i < 18; i++) {
-        const progress = (time * 0.17 + i / 18) % 1;
-        steamPositions[i * 3] = Math.sin(progress * 6 + time * 0.4 + i) * 0.048 * progress;
-        steamPositions[i * 3 + 1] = progress * 0.62;
-        steamPositions[i * 3 + 2] = Math.cos(progress * 5 + i * 0.8) * 0.032 * progress;
-      }
-      steamGeometry.getAttribute('position').needsUpdate = true;
     },
     dispose() { disposed = true; sound.dispose(); teaInteraction.dispose(); },
   };

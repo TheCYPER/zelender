@@ -1,12 +1,98 @@
 import * as THREE from 'three';
 import { Reflector } from 'three/addons/objects/Reflector.js';
-import { POND, pondFloorY, pondPoint, randomGenerator } from './common';
+import { POND, pondFloorY, pondFraction, pondPoint, randomGenerator } from './common';
 import { PondWaves } from './waves';
+
+function addPebbleBed(scene: THREE.Scene, time: { value: number }): number {
+  const random = randomGenerator(828), dummy = new THREE.Object3D(), color = new THREE.Color();
+  const normal = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0), vertex = new THREE.Vector3();
+  const material = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.86, envMapIntensity: 0.34 });
+  material.onBeforeCompile = shader => {
+    shader.uniforms.pondTime = time;
+    shader.vertexShader = 'varying vec3 vPebbleWorld;\n' + shader.vertexShader;
+    shader.vertexShader = shader.vertexShader.replace('#include <worldpos_vertex>', `
+      #include <worldpos_vertex>
+      vec4 bedVertex=vec4(transformed,1.0);
+      #ifdef USE_INSTANCING
+        bedVertex=instanceMatrix*bedVertex;
+      #endif
+      vPebbleWorld=(modelMatrix*bedVertex).xyz;
+    `);
+    shader.fragmentShader = 'varying vec3 vPebbleWorld; uniform float pondTime;\n' + shader.fragmentShader;
+    shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>', `
+      #include <color_fragment>
+      float depth=clamp((${POND.waterY}-vPebbleWorld.y)/2.7,0.0,1.0);
+      float mineral=fract(sin(dot(floor(vPebbleWorld.xz*240.0),vec2(12.9898,78.233)))*43758.5453);
+      float caustic=pow(1.0-abs(sin(vPebbleWorld.x*5.4+sin(vPebbleWorld.z*4.2+pondTime*0.4))),20.0);
+      diffuseColor.rgb *= (0.90+mineral*0.15)*mix(vec3(1.0),vec3(0.62,0.76,0.74),depth);
+      diffuseColor.rgb += vec3(0.05,0.07,0.06)*caustic;
+    `);
+  };
+  material.customProgramCacheKey = () => 'submerged-rounded-pebbles-v1';
+  const patches = [
+    [-5.1, -0.7, 1.5, 1.1], [-3.5, 3.4, 1.6, 0.95], [3.8, 1.9, 1.5, 1.3],
+    [2.6, -2.0, 1.8, 0.95], [-2.0, -1.9, 1.7, 1.0], [0.3, 3.6, 1.6, 0.85],
+  ];
+  const palette = ['#3d514b', '#59665e', '#626e64', '#384844', '#5b5a50', '#42584f'];
+  const counts = [1360, 260, 40];
+  counts.forEach((count, kind) => {
+    const geometry = new THREE.SphereGeometry(1, 10, 7);
+    const positions = geometry.getAttribute('position');
+    for (let i = 0; i < positions.count; i++) {
+      const x = positions.getX(i), y = positions.getY(i), z = positions.getZ(i);
+      const irregular = 1 + Math.sin(x * 4.2 + z * 3.7 + kind * 13) * Math.cos(y * 4.6 + z * 2.0) * 0.075;
+      positions.setXYZ(i, x * irregular, y * irregular, z * irregular);
+    }
+    geometry.computeVertexNormals();
+    const stones = new THREE.InstancedMesh(geometry, material, count);
+    stones.name = `pond-bed-pebbles-${kind}`;
+    for (let i = 0; i < count; i++) {
+      let x: number, z: number;
+      if (random() < 0.82) {
+        const patch = patches[Math.floor(random() * patches.length)];
+        const angle = random() * Math.PI * 2, r = Math.sqrt(random());
+        x = patch[0] + Math.cos(angle) * r * patch[2];
+        z = patch[1] + Math.sin(angle) * r * patch[3];
+      } else {
+        const p = pondPoint(random() * Math.PI * 2, Math.sqrt(random()) * 0.985);
+        x = p.x; z = p.z;
+      }
+      const radius = pondFraction(x, z);
+      if (radius > 0.97) { x = POND.x + (x - POND.x) * 0.97 / radius; z = POND.z + (z - POND.z) * 0.97 / radius; }
+      const size = kind === 0 ? 0.034 + random() * 0.085 : kind === 1 ? 0.11 + random() * 0.08 : 0.20 + random() * 0.075;
+      const thickness = Math.min(0.074, size * (0.35 + random() * 0.12));
+      const bed = pondFloorY(x, z);
+      normal.set(-(pondFloorY(x + 0.025, z) - pondFloorY(x - 0.025, z)) / 0.05,
+        1, -(pondFloorY(x, z + 0.025) - pondFloorY(x, z - 0.025)) / 0.05).normalize();
+      dummy.position.set(x, bed - thickness * 0.22, z);
+      dummy.quaternion.setFromUnitVectors(up, normal);
+      dummy.rotateY(random() * Math.PI * 2);
+      dummy.scale.set(size * (1.05 + random() * 0.42), thickness, size * (0.74 + random() * 0.28));
+      dummy.updateMatrix();
+      // Large flat pebbles bridge small hollows. Bury them enough that their
+      // actual upper vertices fit below the fish's reserved substrate margin.
+      let excess = 0;
+      for (let v = 0; v < positions.count; v++) {
+        vertex.fromBufferAttribute(positions, v).applyMatrix4(dummy.matrix);
+        excess = Math.max(excess, vertex.y - pondFloorY(vertex.x, vertex.z) - 0.075);
+      }
+      dummy.position.y -= excess;
+      dummy.updateMatrix();
+      stones.setMatrixAt(i, dummy.matrix);
+      color.set(palette[Math.floor(random() * palette.length)]).multiplyScalar(0.82 + random() * 0.20);
+      stones.setColorAt(i, color);
+    }
+    stones.receiveShadow = true;
+    stones.computeBoundingSphere();
+    scene.add(stones);
+  });
+  return counts.reduce((sum, count) => sum + count, 0);
+}
 
 /** The reflection is rendered from a clipped mirror camera, then blended over the fish. */
 export function createWater(scene: THREE.Scene) {
   const time = { value: 0 };
-  const floorMaterial = new THREE.MeshStandardMaterial({ color: '#142d25', roughness: 0.95 });
+  const floorMaterial = new THREE.MeshStandardMaterial({ color: '#4e5a52', roughness: 0.97, envMapIntensity: 0.35 });
   floorMaterial.onBeforeCompile = (shader) => {
     shader.uniforms.pondTime = time;
     shader.vertexShader = 'varying vec3 vPondWorld;\n' + shader.vertexShader;
@@ -20,16 +106,19 @@ export function createWater(scene: THREE.Scene) {
       float b = sin(p.x * 7.0 - pondTime * 0.27) * cos(p.y * 6.0 + pondTime * 0.24);
       float caustic = pow(1.0 - abs(sin(a * 1.55 + b * 0.20)), 19.0);
       float caustic2 = pow(1.0 - abs(sin(a * 1.7 - b * 0.3 + 1.2)), 24.0);
-      float depthFalloff = smoothstep(0.12, 1.0, length((p - vec2(${POND.x}, ${POND.z})) / vec2(${POND.rx}, ${POND.rz})));
-      diffuseColor.rgb *= (0.88 + grain * 0.08) * mix(0.52, 1.0, depthFalloff);
-      diffuseColor.rgb += vec3(0.20, 0.28, 0.17) * (caustic * 0.06 + caustic2 * 0.035);
+      float sediment = sin(p.x*0.86 + sin(p.y*0.62))*cos(p.y*1.16-p.x*0.28);
+      float depth = clamp((${POND.waterY} - vPondWorld.y)/2.7,0.0,1.0);
+      diffuseColor.rgb *= (0.72 + grain * 0.27) * (0.88 + sediment*0.16);
+      diffuseColor.rgb *= mix(vec3(1.10,1.04,0.96),vec3(0.58,0.69,0.69),depth);
+      diffuseColor.rgb += vec3(0.24, 0.28, 0.22) * (caustic * 0.065 + caustic2 * 0.035);
     `);
   };
-  const floorVertices = [POND.x, POND.floorY, POND.z];
+  const floorVertices = [POND.x, pondFloorY(POND.x, POND.z), POND.z];
   const floorIndices: number[] = [];
-  const floorRings = 24, floorSegments = 128;
+  const floorRings = 64, floorSegments = 144;
   for (let ring = 1; ring <= floorRings; ring++) for (let segment = 0; segment < floorSegments; segment++) {
-    const p = pondPoint(segment / floorSegments * Math.PI * 2, ring / floorRings);
+    // Extend under the land by a few centimetres to close the join naturally.
+    const p = pondPoint(segment / floorSegments * Math.PI * 2, ring / floorRings * 1.01);
     floorVertices.push(p.x, pondFloorY(p.x, p.z), p.z);
     const current = 1 + (ring - 1) * floorSegments + segment;
     const next = 1 + (ring - 1) * floorSegments + (segment + 1) % floorSegments;
@@ -47,23 +136,6 @@ export function createWater(scene: THREE.Scene) {
   floor.name = 'recessed-pond-bowl';
   floor.receiveShadow = true;
   scene.add(floor);
-
-  // The vertical bank closes the gap between the surface and the recessed floor.
-  // Without it the clear color shows through the far shore as a pale, icy band.
-  const bankVertices: number[] = [];
-  const bankIndices: number[] = [];
-  for (let i = 0; i <= 128; i++) {
-    const p = pondPoint(i / 128 * Math.PI * 2);
-    bankVertices.push(p.x, 0.12, p.z, p.x, pondFloorY(p.x, p.z) - 0.025, p.z);
-    if (i < 128) bankIndices.push(i * 2, i * 2 + 1, i * 2 + 2, i * 2 + 1, i * 2 + 3, i * 2 + 2);
-  }
-  const bankGeometry = new THREE.BufferGeometry();
-  bankGeometry.setAttribute('position', new THREE.Float32BufferAttribute(bankVertices, 3));
-  bankGeometry.setIndex(bankIndices);
-  bankGeometry.computeVertexNormals();
-  const bank = new THREE.Mesh(bankGeometry, new THREE.MeshStandardMaterial({ color: '#405c47', roughness: 1, side: THREE.DoubleSide }));
-  bank.receiveShadow = true;
-  scene.add(bank);
 
   const waves = new PondWaves();
   const surfaceGeometry = new THREE.BufferGeometry();
@@ -147,23 +219,8 @@ export function createWater(scene: THREE.Scene) {
   waterMaterial.depthWrite = false;
   scene.add(water);
 
-  // A few submerged stones near the shallows give the transparent water a visible depth.
   const random = randomGenerator(828);
-  const stones = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 1), new THREE.MeshStandardMaterial({ color: '#657c60', roughness: 1 }), 95);
-  const dummy = new THREE.Object3D();
-  for (let i = 0; i < 95; i++) {
-    const angle = random() * 6.28;
-    const r = 0.75 + random() * 0.15;
-    const x = POND.x + Math.cos(angle) * POND.rx * r, z = POND.z + Math.sin(angle) * POND.rz * r;
-    dummy.position.set(x, pondFloorY(x, z) + 0.03, z);
-    const s = 0.04 + random() * 0.08;
-    dummy.scale.set(s * 1.5, s * 0.5, s);
-    dummy.rotation.y = random() * 6.28;
-    dummy.updateMatrix();
-    stones.setMatrixAt(i, dummy.matrix);
-  }
-  stones.receiveShadow = true;
-  scene.add(stones);
+  const pebbleCount = addPebbleBed(scene, time);
 
   let previousTime = 0;
   let nextRain = 0;
@@ -171,7 +228,18 @@ export function createWater(scene: THREE.Scene) {
     surface: water,
     color: waterMaterial.uniforms.color.value as THREE.Color,
     impulse(x: number, z: number, strength = 0.12) { waves.impulse(x, z, strength); },
-    debug() { return { displacedVertices: waves.heights.filter(height => Math.abs(height) > 0.001).length, maxDisplacement: waves.heights.reduce((max, height) => Math.max(max, Math.abs(height)), 0) }; },
+    sampleHeight(x: number, z: number) {
+      if (!Number.isFinite(x) || !Number.isFinite(z)) return POND.waterY;
+      const col = THREE.MathUtils.clamp((x - waves.x(0)) / waves.dx, 0, waves.columns - 1);
+      const row = THREE.MathUtils.clamp((z - waves.z(0)) / waves.dz, 0, waves.rows - 1);
+      const left = Math.floor(col), right = Math.min(left + 1, waves.columns - 1);
+      const top = Math.floor(row), bottom = Math.min(top + 1, waves.rows - 1);
+      const height = (r: number, c: number) => surfacePositions[(r * waves.columns + c) * 3 + 2];
+      return POND.waterY + THREE.MathUtils.lerp(
+        THREE.MathUtils.lerp(height(top, left), height(top, right), col - left),
+        THREE.MathUtils.lerp(height(bottom, left), height(bottom, right), col - left), row - top);
+    },
+    debug() { return { displacedVertices: waves.heights.filter(height => Math.abs(height) > 0.001).length, maxDisplacement: waves.heights.reduce((max, height) => Math.max(max, Math.abs(height)), 0), pebbleCount }; },
     update(elapsed: number, raining: boolean) {
       waves.step(Math.max(0, elapsed - previousTime));
       previousTime = elapsed;

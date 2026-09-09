@@ -194,7 +194,60 @@ test('visible bowl geometry follows the same depth contract as fish and food', (
   for (let i = 0; i < vertices.count; i++) {
     assert(Math.abs(vertices.getY(i) - pondFloorY(vertices.getX(i), vertices.getZ(i))) < 0.00001);
   }
+  const normals = bowl.geometry.getAttribute('normal');
+  for (let i = 0; i < normals.count; i++) assert(normals.getY(i) > 0.14, 'the bed must climb as a slope, not a vertical cylinder');
+  const shelfHeights: number[] = [];
+  for (let side = 0; side < 24; side++) {
+    const point = pondPoint(side / 24 * Math.PI * 2, 1);
+    assert(Math.abs(pondFloorY(point.x, point.z) - POND.shoreFloorY) < 0.00001, 'the sloping bed meets the garden without a separate wall');
+    const shelf = pondPoint(side / 24 * Math.PI * 2, 0.73);
+    shelfHeights.push(pondFloorY(shelf.x, shelf.z));
+  }
+  assert(Math.max(...shelfHeights) - Math.min(...shelfHeights) > 0.22, 'uneven shelves must break the rotationally uniform bowl');
   assert(POND.waterY - POND.floorY > 2, 'pond must contain a credible swimming depth');
+  water.dispose();
+});
+
+test('rounded pebble patches cover deep and shallow areas without exceeding fish clearance', () => {
+  const scene = new THREE.Scene();
+  const water = createWater(scene);
+  const matrix = new THREE.Matrix4(), point = new THREE.Vector3();
+  let count = 0, deepest = Infinity, shallowest = -Infinity;
+  const sectors = new Set<number>();
+  for (let kind = 0; kind < 3; kind++) {
+    const stones = scene.getObjectByName(`pond-bed-pebbles-${kind}`) as THREE.InstancedMesh;
+    assert(stones.count > 0, 'each rounded size group contributes to the bed');
+    const positions = stones.geometry.getAttribute('position');
+    count += stones.count;
+    for (let i = 0; i < stones.count; i++) {
+      stones.getMatrixAt(i, matrix);
+      point.setFromMatrixPosition(matrix);
+      deepest = Math.min(deepest, point.y);
+      shallowest = Math.max(shallowest, point.y);
+      sectors.add(Math.floor((Math.atan2(point.z - POND.z, point.x - POND.x) + Math.PI) / (Math.PI * 2) * 8));
+      assert(pondFraction(point.x, point.z) < 0.971);
+      for (let vertex = 0; vertex < positions.count; vertex++) {
+        point.fromBufferAttribute(positions, vertex).applyMatrix4(matrix);
+        assert(point.y - pondFloorY(point.x, point.z) <= 0.07501, 'pebbles must fit inside the reserved substrate margin');
+      }
+    }
+  }
+  assert(deepest < -2.2 && shallowest > -0.4);
+  assert.equal(sectors.size, 8, 'natural patches reach every side while allowing open bed between them');
+  assert.equal(water.debug().pebbleCount, count);
+  water.dispose();
+});
+
+test('the aquatic-plant height sampler reads the actually displaced water vertices', () => {
+  const water = createWater(new THREE.Scene());
+  water.impulse(POND.x, POND.z, 0.12);
+  water.update(0.05, false);
+  const vertices = water.surface.geometry.getAttribute('position');
+  for (const i of [1700, 2582, 3540, 4280]) {
+    const x = vertices.getX(i), z = -vertices.getY(i);
+    assert(Math.abs(water.sampleHeight(x, z) - (POND.waterY + vertices.getZ(i))) < 0.00001);
+  }
+  assert(Math.abs(water.sampleHeight(POND.x, POND.z) - POND.waterY) > 0.001);
   water.dispose();
 });
 
@@ -215,7 +268,7 @@ test('pitched fish geometry clears the sloping floor and the water surface durin
         for (let vertex = 0; vertex < positions.count; vertex++) {
           point.fromBufferAttribute(positions, vertex).applyMatrix4(object.matrixWorld);
           assert(point.y <= POND.waterY - 0.165, `fish ${i} broke the lowest wave trough at ${time}s`);
-          assert(point.y >= pondFloorY(point.x, point.z) + 0.015, `fish ${i} touched the sloping floor at ${time}s`);
+          assert(point.y >= pondFloorY(point.x, point.z) + 0.095, `fish ${i} entered the pebble clearance at ${time}s`);
         }
       });
     }
@@ -231,7 +284,14 @@ test('shallow fish displace real waves on a fixed time cadence; deep fish do not
       contacts.push({ x, z, strength });
       waves.impulse(x, z, strength);
     });
-    for (let i = 0; i < 14; i++) scene.getObjectByName(`koi-${i}`)!.position.y = POND.waterY - depth;
+    for (let i = 0; i < 14; i++) {
+      const position = scene.getObjectByName(`koi-${i}`)!.position;
+      // Isolate depth response in the deep basin, not by placing a fish inside
+      // the new shallow shelf and forcing the collision solver to lift it.
+      position.x = POND.x + (position.x - POND.x) * 0.65;
+      position.z = POND.z + (position.z - POND.z) * 0.65;
+      position.y = POND.waterY - depth;
+    }
     for (let frame = 1; frame <= fps * 2; frame++) {
       // Hold fish still to isolate event frequency and surface-distance response.
       koi.update(frame / fps, 0, false);

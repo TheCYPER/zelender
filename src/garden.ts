@@ -4,6 +4,7 @@ import { horizontal, POND, softTexture } from './scene/common';
 import { createLandscape } from './scene/landscape';
 import { createKoi } from './scene/koi';
 import { createWater } from './scene/water';
+import { createAquaticPlants } from './scene/aquatic-plants';
 import { createWeather } from './scene/weather';
 import { createRendering } from './scene/rendering';
 import { createBackdrop } from './scene/backdrop';
@@ -60,6 +61,7 @@ export function createGarden(host: HTMLElement, onInteraction?: (kind: 'feed' | 
   const backdrop = createBackdrop(scene);
   const softMap = softTexture();
   const pondWater = createWater(scene);
+  const aquaticPlants = createAquaticPlants(scene, pondWater.sampleHeight);
   const koi = createKoi(scene, softMap, (x, z) => {
     pondWater.impulse(x, z, 0.06);
     ripple(x, z, 0.3);
@@ -219,14 +221,19 @@ export function createGarden(host: HTMLElement, onInteraction?: (kind: 'feed' | 
   function onPointerMove(event: PointerEvent) {
     setPointerRay(event);
     if (teaPointer !== null) {
-      if (event.pointerId === teaPointer) landscape.tea.pointerMove(raycaster);
+      if (event.pointerId === teaPointer) {
+        // Chorded mouse buttons report intermediate releases as pointermove.
+        if ((event.buttons & 1) === 0) onPointerUp(event);
+        else landscape.tea.pointerMove(raycaster);
+      }
       return;
     }
     canvas.style.cursor = view === 'room' && landscape.tea.hovered(raycaster) ? 'grab'
       : view === 'room' && raycaster.intersectObject(landscape.chimeTarget, true).length ? 'pointer' : '';
   }
   function onPointerUp(event: PointerEvent) {
-    if (event.pointerId !== teaPointer) return;
+    // The right button can be released during a left-held drinking gesture.
+    if (event.pointerId !== teaPointer || (event.buttons & 1) !== 0) return;
     landscape.tea.pointerUp();
     teaPointer = null;
     if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
@@ -294,6 +301,7 @@ export function createGarden(host: HTMLElement, onInteraction?: (kind: 'feed' | 
     pondWater.color.lerp(targetWater, dt * 1.5);
     waterElapsed += dt * (reducedMotion ? 0.2 : 1);
     pondWater.update(waterElapsed, weather === 'rain');
+    aquaticPlants.update(elapsed, reducedMotion);
     weatherEffects.update(elapsed, weather, reducedMotion);
     koi.update(elapsed, dt, reducedMotion);
     for (const item of ripples) {
@@ -331,6 +339,7 @@ export function createGarden(host: HTMLElement, onInteraction?: (kind: 'feed' | 
         projectedPondCenter: { x: Math.round((center.x + 1) * width / 2), y: Math.round((1 - center.y) * height / 2) },
         lastInteraction,
         waves: pondWater.debug(),
+        aquaticPlants: aquaticPlants.debug(),
         tea: landscape.tea.debug(camera, width, height),
         chime: { rings: chimeRings, angle: landscape.chimeTarget.rotation.z, screen: { x: Math.round((chime.x + 1) * width / 2), y: Math.round((1 - chime.y) * height / 2) } },
         ...koi.debug(elapsed, camera, width, height),

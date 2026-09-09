@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { createTeaSound } from './tea-audio';
+import { createTeaSteam } from './tea-steam';
 
 export type TeaCup = { object: THREE.Group; liquid: THREE.Mesh; fill: number };
 export type TeaInteraction = {
@@ -18,12 +19,13 @@ const CUP_RIM = 0.248;
 const POUR_TILT = 0.76;
 
 /** Operates in tray coordinates; the tray may be translated/rotated in the room. */
-export function createTeaInteraction(tray: THREE.Group, pot: THREE.Group, cups: TeaCup[]) {
+export function createTeaInteraction(tray: THREE.Group, pot: THREE.Group, cups: TeaCup[], steamTexture?: THREE.Texture) {
   const audio = createTeaSound();
   const home = pot.position.clone();
   const homeRotation = pot.quaternion.clone();
   const cupHomes = cups.map(cup => cup.object.position.clone());
   const cupTargets = cupHomes.map(position => position.clone());
+  const cupPositions = cupHomes.map(position => position.clone());
   const cupDrinking = cups.map(() => 0);
   const cupDrinkStart = cups.map(cup => cup.fill);
   const potTarget = home.clone();
@@ -58,6 +60,14 @@ export function createTeaInteraction(tray: THREE.Group, pot: THREE.Group, cups: 
   splash.visible = false;
   splash.userData.skipAO = true;
   tray.add(splash);
+  const steam = createTeaSteam(tray, [
+    { name: 'pot', object: pot, point: new THREE.Vector3(0, 0.59, 0), enabled: () => true, count: 22, rate: 7, life: 2.8, opacity: 0.055 },
+    ...cups.map((cup, index) => ({
+      name: `cup-${index}`, object: cup.liquid, point: new THREE.Vector3(0, 0, 0.012), enabled: () => cup.fill > 0.02,
+      count: 10, rate: 4, life: 2.1, opacity: 0.035, size: 0.8,
+    })),
+    { name: 'pour', object: stream, point: new THREE.Vector3(), enabled: () => stream.visible, count: 14, rate: 9, life: 1.3, opacity: 0.027, size: 0.65, verticalSpread: 0.8 },
+  ], steamTexture);
 
   function hit(raycaster: THREE.Raycaster) {
     if (disposed) return null;
@@ -137,11 +147,13 @@ export function createTeaInteraction(tray: THREE.Group, pot: THREE.Group, cups: 
     cups.forEach((cup, index) => {
       const safe = settlePosition(cupTargets[index], index);
       cupTargets[index].copy(safe);
+      cupPositions[index].copy(safe);
       cup.object.position.copy(safe);
       cup.object.rotation.set(0, 0, 0);
       cupDrinking[index] = 0;
     });
     stream.visible = splash.visible = false;
+    steam.clear();
     audio.stop();
   }
 
@@ -183,8 +195,9 @@ export function createTeaInteraction(tray: THREE.Group, pot: THREE.Group, cups: 
       audio.setPouring(false);
     },
     contextMenu(raycaster) {
-      if (active !== null) return true;
-      const selected = hit(raycaster);
+      // Captured left dragging may put the cursor below the lifted cup. The
+      // right-button gesture belongs to that held cup regardless of its ray.
+      const selected = active ?? hit(raycaster);
       if (selected === null) return false;
       if (selected === 'pot') return true;
       if (cups[selected].fill > 0.005 && cupDrinking[selected] === 0) {
@@ -205,7 +218,8 @@ export function createTeaInteraction(tray: THREE.Group, pot: THREE.Group, cups: 
       return {
         active, pouringCup: stream.visible ? pouringCup : -1, streamVisible: stream.visible,
         pot: { position: pot.position.toArray(), tilt: pot.rotation.z, screen: screen(pot, new THREE.Vector3(0, 0.28, 0)) },
-        cups: cups.map((cup, id) => ({ id, fill: cup.fill, position: cup.object.position.toArray(), screen: screen(cup.object, new THREE.Vector3(0, 0.13, 0)) })),
+        cups: cups.map((cup, id) => ({ id, fill: cup.fill, drinking: cupDrinking[id] > 0, position: cup.object.position.toArray(), screen: screen(cup.object, new THREE.Vector3(0, 0.13, 0)) })),
+        steam: steam.debug(),
         audio: audio.debug(),
       };
     },
@@ -231,16 +245,18 @@ export function createTeaInteraction(tray: THREE.Group, pot: THREE.Group, cups: 
         audio.effect('setdown');
       }
       cups.forEach((cup, index) => {
-        cup.object.position.lerp(cupTargets[index], blend);
+        cupPositions[index].lerp(cupTargets[index], blend);
+        cup.object.position.copy(cupPositions[index]);
         if (cupDrinking[index] > 0) {
           cupDrinking[index] = Math.max(0, cupDrinking[index] - step / 0.95);
           cup.fill = cupDrinkStart[index] * cupDrinking[index];
           const arc = Math.sin(cupDrinking[index] * Math.PI);
-          cup.object.position.y = cupTargets[index].y + (reduced ? 0 : arc * 0.14);
+          cup.object.position.y += reduced ? 0 : arc * 0.14;
           cup.object.rotation.x = reduced ? 0 : arc * 0.18;
         } else cup.object.rotation.x *= 1 - blend;
         if (settleCup === index && cup.object.position.distanceTo(cupTargets[index]) < 0.015) {
           cup.object.position.copy(cupTargets[index]);
+          cupPositions[index].copy(cupTargets[index]);
           settleCup = -1;
           audio.effect('setdown');
         }
@@ -275,6 +291,7 @@ export function createTeaInteraction(tray: THREE.Group, pot: THREE.Group, cups: 
         cup.liquid.scale.setScalar((0.091 + cup.fill * 0.053) / 0.136);
         cup.liquid.visible = cup.fill > 0.003;
       });
+      steam.update(step, reducedMotion);
     },
     dispose() {
       if (disposed) return;
@@ -282,6 +299,7 @@ export function createTeaInteraction(tray: THREE.Group, pot: THREE.Group, cups: 
       disposed = true;
       cleanup.abort();
       audio.dispose();
+      steam.dispose();
     },
   };
 }

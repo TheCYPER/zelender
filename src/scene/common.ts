@@ -2,7 +2,7 @@ import * as THREE from 'three';
 
 export const POND = {
   x: -0.6, z: 0.8, rx: 7.35, rz: 4.9, waterY: 0.08,
-  floorY: -2.45, shoreFloorY: -1.75,
+  floorY: -2.45, shoreFloorY: -0.024,
 };
 
 export function randomGenerator(seed: number): () => number {
@@ -39,10 +39,23 @@ export function pondFraction(x: number, z: number): number {
   return Math.hypot(dx, dz) / shoreRadius(Math.atan2(dz, dx));
 }
 
-/** Shared bowl height for visible substrate, swimming bounds and sinking food. */
+/** Continuous, asymmetric stone bed: a deep hollow, broad shelves and a soft rim. */
 export function pondFloorY(x: number, z: number): number {
-  const bank = THREE.MathUtils.smoothstep(pondFraction(x, z), 0.25, 1);
-  return THREE.MathUtils.lerp(POND.floorY, POND.shoreFloorY, bank);
+  const dx = (x - POND.x) / POND.rx, dz = (z - POND.z) / POND.rz;
+  const angle = Math.atan2(dz, dx);
+  const radius = Math.hypot(dx, dz) / shoreRadius(angle);
+  if (radius >= 1) return POND.shoreFloorY;
+  const mound = (cx: number, cz: number, rx: number, rz: number, height: number) =>
+    height * Math.exp(-(((x - cx) / rx) ** 2) - ((z - cz) / rz) ** 2);
+  const hollow = POND.floorY + Math.sin(x * 0.58 + z * 0.31) * 0.09
+    + Math.cos(z * 0.73 - x * 0.19) * 0.07 - mound(-1.9, 0.5, 2.8, 2.0, 0.13);
+  const shelfStart = 0.34 + Math.sin(angle * 2 + 0.4) * 0.065 + Math.cos(angle * 5) * 0.025;
+  const shelf = THREE.MathUtils.smoothstep(radius, shelfStart, 0.86);
+  const shelfY = -1.58 + Math.sin(angle - 0.4) * 0.16 + Math.cos(angle * 3 + 0.7) * 0.09;
+  const bank = THREE.MathUtils.smoothstep(radius, 0.80 + Math.sin(angle * 3) * 0.025, 1);
+  const shelves = mound(-4.5, 1.5, 1.9, 1.4, 0.26) + mound(3.3, -1.4, 1.8, 1.2, 0.22);
+  const bed = THREE.MathUtils.lerp(hollow, shelfY, shelf) + shelves * (1 - shelf * 0.65);
+  return THREE.MathUtils.lerp(bed, POND.shoreFloorY, bank);
 }
 
 /** One analytic channel shared by sculpted ground and the visible garden stream. */

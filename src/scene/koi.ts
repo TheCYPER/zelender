@@ -58,9 +58,28 @@ function verticalBounds(koi: Fish) {
     0.21 * cosine - 1.07 * sine) * koi.size + 0.025;
   const lower = Math.max(0.18 * cosine - 0.66 * sine, 0.21 * cosine + 1.07 * sine) * koi.size + 0.025;
   return {
-    min: floor + lower + 0.09,
+    min: floor + lower + 0.13,
     max: POND.waterY - 0.17 - upper,
   };
+}
+
+/** Shallow shelves are solid obstacles. Retreat before clamping vertical motion
+ * so an impossible min/max interval never pushes a fish through the surface. */
+function constrainSwimmingSpace(koi: Fish) {
+  const position = koi.group.position;
+  const fraction = pondFraction(position.x, position.z);
+  if (fraction > 0.86) {
+    position.x = POND.x + (position.x - POND.x) * 0.86 / fraction;
+    position.z = POND.z + (position.z - POND.z) * 0.86 / fraction;
+  }
+  let bounds = verticalBounds(koi);
+  for (let step = 0; bounds.min > bounds.max - 0.035 && step < 24; step++) {
+    position.x = THREE.MathUtils.lerp(position.x, POND.x, 0.035);
+    position.z = THREE.MathUtils.lerp(position.z, POND.z, 0.035);
+    bounds = verticalBounds(koi);
+  }
+  position.y = THREE.MathUtils.clamp(position.y, bounds.min, bounds.max);
+  return bounds;
 }
 
 function koiBody(seed: number, variety: number): THREE.BufferGeometry {
@@ -390,7 +409,8 @@ export function createKoi(scene: THREE.Scene, softMap: THREE.Texture,
       }
       const boundary = pondFraction(position.x, position.z);
       const nextBoundary = pondFraction(position.x + Math.sin(koi.heading) * 0.8, position.z + Math.cos(koi.heading) * 0.8);
-      if (boundary > 0.82 || nextBoundary > 0.88) {
+      const shallowForDive = !koi.feeding && targetY < verticalBounds(koi).min + 0.16;
+      if (boundary > 0.82 || nextBoundary > 0.88 || shallowForDive) {
         targetHeading = Math.atan2(POND.x - position.x, POND.z - position.z) + Math.sin(koi.phase + time * 0.2) * 0.6;
         turnRate = 3;
         if (time < koi.panicUntil) koi.escapeHeading = targetHeading;
@@ -398,7 +418,7 @@ export function createKoi(scene: THREE.Scene, softMap: THREE.Texture,
       const difference = Math.atan2(Math.sin(targetHeading - koi.heading), Math.cos(targetHeading - koi.heading));
       koi.heading += Math.max(-turnRate * dt, Math.min(turnRate * dt, difference));
       koi.speed += (targetSpeed - koi.speed) * Math.min(dt * 3.2, 1);
-      const bounds = verticalBounds(koi);
+      const bounds = constrainSwimmingSpace(koi);
       targetY = THREE.MathUtils.clamp(targetY, bounds.min, bounds.max);
       const targetPitch = THREE.MathUtils.clamp(Math.atan2((targetY - position.y) * 0.85, Math.max(koi.speed, 0.25)), -0.30, 0.30);
       koi.pitch += THREE.MathUtils.clamp(targetPitch - koi.pitch, -dt * 0.55, dt * 0.55);
@@ -416,8 +436,7 @@ export function createKoi(scene: THREE.Scene, softMap: THREE.Texture,
         koi.escapeHeading = koi.heading;
         koi.speed = Math.min(koi.speed, 1.8);
       }
-      const afterBounds = verticalBounds(koi);
-      position.y = THREE.MathUtils.clamp(position.y, afterBounds.min, afterBounds.max);
+      constrainSwimmingSpace(koi);
       koi.group.rotation.set(-koi.pitch, koi.heading, 0, 'YXZ');
       koi.swimPhase += dt * (3.6 + koi.speed * 4);
       koi.wave.value = koi.swimPhase;
@@ -436,29 +455,31 @@ export function createKoi(scene: THREE.Scene, softMap: THREE.Texture,
     // instead of depending on platform-specific rounding in crowded schools.
     const separationMargin = 0.003;
     for (let iteration = 0; iteration < 48; iteration++) {
+      const depthBounds = fish.map(verticalBounds);
       for (let a = 0; a < fish.length; a++) for (let b = a + 1; b < fish.length; b++) {
         const contact = bodyContact(fish[a], fish[b]);
         const overlap = contact.radius + separationMargin - contact.distance;
         if (overlap <= 0) continue;
         const push = overlap * 0.5;
-        fish[a].group.position.x += contact.nx * push;
-        fish[a].group.position.y += contact.ny * push;
-        fish[a].group.position.z += contact.nz * push;
-        fish[b].group.position.x -= contact.nx * push;
-        fish[b].group.position.y -= contact.ny * push;
-        fish[b].group.position.z -= contact.nz * push;
-      }
-      for (const koi of fish) {
-        const position = koi.group.position;
-        const fraction = pondFraction(position.x, position.z);
-        // Leave space for the head/tail, not only the centre point, at the bank.
-        if (fraction > 0.86) {
-          position.x = POND.x + (position.x - POND.x) * 0.86 / fraction;
-          position.z = POND.z + (position.z - POND.z) * 0.86 / fraction;
+        let { nx, ny, nz } = contact;
+        const ap = fish[a].group.position, bp = fish[b].group.position;
+        const ay = ap.y + ny * push, by = bp.y - ny * push;
+        if (Math.abs(ny) > 0.35 && (ay < depthBounds[a].min || ay > depthBounds[a].max || by < depthBounds[b].min || by > depthBounds[b].max)) {
+          // At a shallow shelf there may be no room to pass vertically. Resolve
+          // sideways instead of repeatedly pushing into a blocked depth bound.
+          const horizontalLength = Math.hypot(nx, nz);
+          nx = horizontalLength > 1e-6 ? nx / horizontalLength : Math.cos(fish[a].heading);
+          nz = horizontalLength > 1e-6 ? nz / horizontalLength : -Math.sin(fish[a].heading);
+          ny = 0;
         }
-        const bounds = verticalBounds(koi);
-        position.y = THREE.MathUtils.clamp(position.y, bounds.min, bounds.max);
+        ap.x += nx * push;
+        ap.y += ny * push;
+        ap.z += nz * push;
+        bp.x -= nx * push;
+        bp.y -= ny * push;
+        bp.z -= nz * push;
       }
+      for (const koi of fish) constrainSwimmingSpace(koi);
       let unresolved = false;
       for (let a = 0; a < fish.length && !unresolved; a++) for (let b = a + 1; b < fish.length; b++) {
         const contact = bodyContact(fish[a], fish[b]);

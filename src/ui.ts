@@ -110,7 +110,7 @@ export function mountUI(host: HTMLElement, garden: GardenController): { dispose(
       <div class="slider-labels"><span>清晰</span><span>通透</span></div>
       <div class="install-guide"><h3>把庭院设为新标签页</h3><p>每次打开 Chrome，都回到这一方安静。</p><a class="download-extension" href="./zelender-extension.zip" download>${icon('download')}<span>下载 Chrome 扩展</span></a><ol><li>下载后，解压 ZIP 文件。</li><li>打开 <code>chrome://extensions</code>，开启「开发者模式」。</li><li>选择「加载已解压的扩展程序」，选中解压后的文件夹。</li></ol></div>
       <p class="settings-note">待办仅存于当前浏览器，不会上传。网页与扩展的数据各自保存。</p>
-      <p class="interaction-guide"><span class="pointer-hint">右键水面投喂 · 左键水面惊鱼</span><span class="touch-hint">轻触水面惊鱼，用下方按钮投喂</span><br>点击风铃听声；拖起茶壶，停在杯上便会倒茶，松手归位。<br>茶杯可以拖动，右键饮茶。</p>
+      <p class="interaction-guide"><span class="pointer-hint">右键水面投喂 · 左键水面惊鱼</span><span class="touch-hint">轻触水面惊鱼，用下方按钮投喂</span><br>点击风铃听声；拖起茶壶，停在杯上便会倒茶，松手归位。<br>左键端起茶杯，按住时也可右键饮茶。</p>
       <p class="keyboard-hint"><kbd>1</kbd> 庭前 <kbd>2</kbd> 池畔 <kbd>F</kbd> 投喂 <kbd>H</kbd> 隐藏界面 <kbd>Esc</kbd> 收起面板</p>
     </section>
     <div class="toast glass" role="status" aria-live="polite" aria-atomic="true" hidden></div>
