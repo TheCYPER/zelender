@@ -63,7 +63,7 @@ export function createGarden(host: HTMLElement, onInteraction?: (kind: 'feed' | 
   const koi = createKoi(scene, softMap, (x, z) => {
     pondWater.impulse(x, z, 0.06);
     ripple(x, z, 0.3);
-  });
+  }, (x, z, strength) => pondWater.impulse(x, z, strength));
   const water = pondWater.surface;
   const weatherEffects = createWeather(scene, renderer.getPixelRatio());
   const rendering = createRendering(renderer, scene, camera);
@@ -95,7 +95,7 @@ export function createGarden(host: HTMLElement, onInteraction?: (kind: 'feed' | 
   const previousLoadComplete = THREE.DefaultLoadingManager.onLoad;
   const onAssetsLoaded = () => {
     previousLoadComplete?.();
-    if (!disposed) renderer.shadowMap.needsUpdate = true;
+    if (!disposed) { renderer.shadowMap.needsUpdate = true; rendering.invalidate(); }
   };
   THREE.DefaultLoadingManager.onLoad = onAssetsLoaded;
   let environment: THREE.WebGLRenderTarget | undefined;
@@ -177,29 +177,73 @@ export function createGarden(host: HTMLElement, onInteraction?: (kind: 'feed' | 
     onInteraction?.(kind);
   }
 
-  function hit(event: MouseEvent): THREE.Vector3 | null {
+  function setPointerRay(event: MouseEvent) {
     const rect = renderer.domElement.getBoundingClientRect();
     pointer.set((event.clientX - rect.left) / rect.width * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);
     raycaster.setFromCamera(pointer, camera);
-    const hits = raycaster.intersectObject(water, false);
-    return hits[0]?.point ?? null;
+  }
+  function waterHit(): THREE.Vector3 | null {
+    return raycaster.intersectObject(water, false)[0]?.point ?? null;
+  }
+  let teaPointer: number | null = null;
+  let teaShadowUntil = 0;
+  let nextWindShadow = 0;
+  const canvas = renderer.domElement;
+  canvas.style.touchAction = 'none';
+  function cancelTea() {
+    landscape.tea.cancel();
+    const id = teaPointer;
+    teaPointer = null;
+    if (id !== null && canvas.hasPointerCapture(id)) canvas.releasePointerCapture(id);
+    canvas.style.cursor = '';
+    teaShadowUntil = elapsed + 1.5;
   }
   function onPointer(event: PointerEvent) {
-    if (event.button !== 0) return;
-    const point = hit(event);
+    if (event.button !== 0 || teaPointer !== null) return;
+    setPointerRay(event);
+    if (view === 'room' && landscape.tea.pointerDown(raycaster)) {
+      event.preventDefault();
+      teaPointer = event.pointerId;
+      canvas.setPointerCapture(event.pointerId);
+      canvas.style.cursor = 'grabbing';
+      return;
+    }
     if (view === 'room' && raycaster.intersectObject(landscape.chimeTarget, true).length) {
       landscape.ringChime();
       chimeRings++;
       return;
     }
+    const point = waterHit();
     if (point) interact('startle', point.x, point.z);
   }
   function onPointerMove(event: PointerEvent) {
-    hit(event);
-    renderer.domElement.style.cursor = view === 'room' && raycaster.intersectObject(landscape.chimeTarget, true).length ? 'pointer' : '';
+    setPointerRay(event);
+    if (teaPointer !== null) {
+      if (event.pointerId === teaPointer) landscape.tea.pointerMove(raycaster);
+      return;
+    }
+    canvas.style.cursor = view === 'room' && landscape.tea.hovered(raycaster) ? 'grab'
+      : view === 'room' && raycaster.intersectObject(landscape.chimeTarget, true).length ? 'pointer' : '';
+  }
+  function onPointerUp(event: PointerEvent) {
+    if (event.pointerId !== teaPointer) return;
+    landscape.tea.pointerUp();
+    teaPointer = null;
+    if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+    canvas.style.cursor = '';
+    teaShadowUntil = elapsed + 1.5;
+  }
+  function onPointerCancel(event: PointerEvent) {
+    if (event.pointerId === teaPointer) cancelTea();
   }
   function onContext(event: MouseEvent) {
-    const point = hit(event);
+    setPointerRay(event);
+    if (view === 'room' && landscape.tea.contextMenu(raycaster)) {
+      event.preventDefault();
+      teaShadowUntil = elapsed + 1.5;
+      return;
+    }
+    const point = waterHit();
     if (!point) return;
     event.preventDefault();
     interact('feed', point.x, point.z);
@@ -212,6 +256,10 @@ export function createGarden(host: HTMLElement, onInteraction?: (kind: 'feed' | 
   }
   renderer.domElement.addEventListener('pointerdown', onPointer);
   renderer.domElement.addEventListener('pointermove', onPointerMove);
+  canvas.addEventListener('pointerup', onPointerUp);
+  canvas.addEventListener('pointercancel', onPointerCancel);
+  canvas.addEventListener('lostpointercapture', onPointerCancel);
+  window.addEventListener('blur', cancelTea);
   renderer.domElement.addEventListener('contextmenu', onContext);
   renderer.domElement.addEventListener('keydown', onKey);
 
@@ -238,7 +286,8 @@ export function createGarden(host: HTMLElement, onInteraction?: (kind: 'feed' | 
     targetSun.set(atmosphere.sun);
     targetWater.set(atmosphere.water);
     if (scene.background instanceof THREE.Color) scene.background.lerp(targetSky, dt * 1.5);
-    const skyBrightness = weather === 'rain' ? 0.46 : weather === 'mist' ? 0.70 : 0.85;
+    backdrop.update(elapsed, weather, reducedMotion);
+    const skyBrightness = weather === 'rain' ? 0.9 : 1.0;
     scene.backgroundIntensity = THREE.MathUtils.lerp(scene.backgroundIntensity, skyBrightness, dt * 1.5);
     sunlight.color.lerp(targetSun, dt * 1.5);
     sunlight.intensity = THREE.MathUtils.lerp(sunlight.intensity, atmosphere.light, dt * 1.5);
@@ -254,6 +303,12 @@ export function createGarden(host: HTMLElement, onInteraction?: (kind: 'feed' | 
       item.mesh.scale.setScalar(0.07 + age * item.strength);
       item.mesh.material.opacity = Math.max(0, 0.33 * (1 - age / 2.9));
     }
+    // Trees move slowly: refresh their shadows without rebuilding static AO.
+    if (!reducedMotion && elapsed >= nextWindShadow) {
+      renderer.shadowMap.needsUpdate = true;
+      nextWindShadow = elapsed + 0.65;
+    }
+    if (teaPointer !== null || elapsed < teaShadowUntil) renderer.shadowMap.needsUpdate = true;
     const renderStart = performance.now();
     rendering.render();
     frameTiming = { intervalMs: Math.round(interval), logicMs: Math.round(renderStart - frameStart), renderMs: Math.round(performance.now() - renderStart) };
@@ -262,11 +317,11 @@ export function createGarden(host: HTMLElement, onInteraction?: (kind: 'feed' | 
   frame = requestAnimationFrame(render);
 
   return {
-    setView(next) { view = next; cameraDestination(); },
-    setWeather(next) { weather = next; landscape.snow.visible = next === 'snow'; renderer.shadowMap.needsUpdate = true; },
+    setView(next) { cancelTea(); view = next; cameraDestination(); },
+    setWeather(next) { weather = next; landscape.snow.visible = next === 'snow'; renderer.shadowMap.needsUpdate = true; rendering.invalidate(); },
     feed() { interact('feed', POND.x, POND.z); },
     startle() { interact('startle', POND.x, POND.z); },
-    setPaused(value) { paused = value; lastFrame = performance.now(); },
+    setPaused(value) { if (value) cancelTea(); paused = value; lastFrame = performance.now(); },
     getDebugState() {
       const center = new THREE.Vector3(POND.x, POND.waterY, POND.z).project(camera);
       const chime = landscape.chimeTarget.localToWorld(new THREE.Vector3(0, -0.27, 0)).project(camera);
@@ -276,6 +331,7 @@ export function createGarden(host: HTMLElement, onInteraction?: (kind: 'feed' | 
         projectedPondCenter: { x: Math.round((center.x + 1) * width / 2), y: Math.round((1 - center.y) * height / 2) },
         lastInteraction,
         waves: pondWater.debug(),
+        tea: landscape.tea.debug(camera, width, height),
         chime: { rings: chimeRings, angle: landscape.chimeTarget.rotation.z, screen: { x: Math.round((chime.x + 1) * width / 2), y: Math.round((1 - chime.y) * height / 2) } },
         ...koi.debug(elapsed, camera, width, height),
         renderer: { calls: renderer.info.render.calls, triangles: renderer.info.render.triangles },
@@ -283,6 +339,7 @@ export function createGarden(host: HTMLElement, onInteraction?: (kind: 'feed' | 
       };
     },
     dispose() {
+      cancelTea();
       disposed = true;
       if (THREE.DefaultLoadingManager.onLoad === onAssetsLoaded) THREE.DefaultLoadingManager.onLoad = previousLoadComplete;
       cancelAnimationFrame(frame);
@@ -290,6 +347,10 @@ export function createGarden(host: HTMLElement, onInteraction?: (kind: 'feed' | 
       reducedMotionQuery.removeEventListener('change', onReducedMotion);
       renderer.domElement.removeEventListener('pointerdown', onPointer);
       renderer.domElement.removeEventListener('pointermove', onPointerMove);
+      canvas.removeEventListener('pointerup', onPointerUp);
+      canvas.removeEventListener('pointercancel', onPointerCancel);
+      canvas.removeEventListener('lostpointercapture', onPointerCancel);
+      window.removeEventListener('blur', cancelTea);
       renderer.domElement.removeEventListener('contextmenu', onContext);
       renderer.domElement.removeEventListener('keydown', onKey);
       const geometries = new Set<THREE.BufferGeometry>();

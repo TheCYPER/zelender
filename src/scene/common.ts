@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 
-export const POND = { x: -0.6, z: 0.8, rx: 7.35, rz: 4.9, waterY: 0.08 };
+export const POND = {
+  x: -0.6, z: 0.8, rx: 7.35, rz: 4.9, waterY: 0.08,
+  floorY: -2.45, shoreFloorY: -1.75,
+};
 
 export function randomGenerator(seed: number): () => number {
   return () => {
@@ -34,6 +37,22 @@ export function pondFraction(x: number, z: number): number {
   const dx = (x - POND.x) / POND.rx;
   const dz = (z - POND.z) / POND.rz;
   return Math.hypot(dx, dz) / shoreRadius(Math.atan2(dz, dx));
+}
+
+/** Shared bowl height for visible substrate, swimming bounds and sinking food. */
+export function pondFloorY(x: number, z: number): number {
+  const bank = THREE.MathUtils.smoothstep(pondFraction(x, z), 0.25, 1);
+  return THREE.MathUtils.lerp(POND.floorY, POND.shoreFloorY, bank);
+}
+
+/** One analytic channel shared by sculpted ground and the visible garden stream. */
+export function gardenStreamProfile(z: number) {
+  const distance = -z - 11;
+  return {
+    x: 12.8 + Math.sin(distance * 0.095) * 2.5 + distance * 0.10,
+    width: 1.25 + Math.sin(distance * 0.08) * 0.15 + Math.max(0, distance) * 0.018,
+    strength: THREE.MathUtils.smoothstep(distance, 0, 3) * (1 - THREE.MathUtils.smoothstep(distance, 47, 53)),
+  };
 }
 
 export function horizontal(geometry: THREE.BufferGeometry): THREE.BufferGeometry {

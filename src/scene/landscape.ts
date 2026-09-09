@@ -3,8 +3,10 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { horizontal, POND, pondFraction, pondPoint, randomGenerator } from './common';
 import { createGardenMaterials } from './materials';
 import { createTeaCorner } from './tea';
+import type { TeaInteraction } from './tea-interaction';
 import { createGardenTrees, groundHeight } from './vegetation';
 import { createGardenShrubs } from './shrubs';
+import { createCountryside } from './countryside';
 
 export interface Landscape {
   room: THREE.Group;
@@ -12,6 +14,7 @@ export interface Landscape {
   foliage: THREE.InstancedMesh[];
   lanternLight: THREE.PointLight;
   chimeTarget: THREE.Group;
+  tea: TeaInteraction;
   ringChime(): void;
   dispose(): void;
   update(time: number, reducedMotion: boolean): void;
@@ -422,8 +425,9 @@ export function createLandscape(scene: THREE.Scene): Landscape {
   addUnderstory(scene, (x, z) => gravelFootprints.some((sample) =>
     (x - sample.x) ** 2 + (z - sample.z) ** 2 < sample.radius ** 2));
   addSculpturalStones(scene, rockMaterial);
+  const countryside = createCountryside(scene, { stone, darkWood });
   const planting = createGardenTrees(scene, bark);
-  planting.foliage.push(...createGardenShrubs(scene));
+  planting.foliage.push(...createGardenShrubs(scene, planting.wind));
   const padShape = new THREE.Shape();
   padShape.moveTo(0.03, 0);
   padShape.absarc(0, 0, 1, 0.17, Math.PI * 2 - 0.16, false);
@@ -469,8 +473,9 @@ export function createLandscape(scene: THREE.Scene): Landscape {
   return {
     room, snow, foliage: planting.foliage, lanternLight: addLantern(scene, stone),
     chimeTarget: teaCorner.chimeTarget,
+    tea: teaCorner.interaction,
     ringChime: teaCorner.ring,
     dispose: teaCorner.dispose,
-    update(time, reducedMotion) { planting.update(time, reducedMotion); teaCorner.update(time, reducedMotion); },
+    update(time, reducedMotion) { planting.update(time, reducedMotion); countryside.update(time, reducedMotion); teaCorner.update(time, reducedMotion); },
   };
 }

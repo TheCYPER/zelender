@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { Tree } from '@dgreenheck/ez-tree';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { pondFraction, randomGenerator } from './common';
+import { gardenStreamProfile, pondFraction, randomGenerator } from './common';
+import { addFoliageWind, createWindState, sampleWind, updateWind, type WindState } from './wind';
 
 type Planting = { x: number; z: number; height: number; yaw: number; breadth?: number };
 
@@ -30,7 +31,7 @@ function curvedLimb(points: THREE.Vector3[], baseRadius: number, tipRadius: numb
 }
 
 /** A trained pine with broad, separated pads of fine three-dimensional needles. */
-function createNiwaki(scene: THREE.Scene, bark: THREE.MeshStandardMaterial, wind: { value: number }): THREE.InstancedMesh[] {
+function createNiwaki(scene: THREE.Scene, bark: THREE.MeshStandardMaterial, wind: WindState) {
   const random = randomGenerator(74192);
   const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
   const group = new THREE.Group();
@@ -76,12 +77,7 @@ function createNiwaki(scene: THREE.Scene, bark: THREE.MeshStandardMaterial, wind
   shootGeometry.computeVertexNormals();
   const counts = pads.map((pad) => Math.round(420 * pad.radius.x * pad.radius.z));
   const needleMaterial = new THREE.MeshStandardMaterial({ color: '#ffffff', vertexColors: true, roughness: 0.91, side: THREE.DoubleSide, envMapIntensity: 0.32 });
-  needleMaterial.onBeforeCompile = (shader) => {
-    shader.uniforms.gardenPineTime = wind;
-    shader.vertexShader = 'uniform float gardenPineTime;\n' + shader.vertexShader;
-    shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed.x += sin(gardenPineTime * 0.8 + position.z * 4.0) * position.z * 0.025;');
-  };
-  needleMaterial.customProgramCacheKey = () => 'niwaki-needle-shoot-v1';
+  addFoliageWind(needleMaterial, wind, 0.09);
   const needles = new THREE.InstancedMesh(shootGeometry, needleMaterial, counts.reduce((a,b)=>a+b,0));
   needles.name = 'niwaki-fine-radial-needles';
   needles.receiveShadow = true;
@@ -148,7 +144,7 @@ function createNiwaki(scene: THREE.Scene, bark: THREE.MeshStandardMaterial, wind
   }
   needles.computeBoundingSphere();
   group.add(needles);
-  return [needles];
+  return { needles, group };
 }
 
 /** Continuous planted contours, with a level shoreline and no backdrop seam. */
@@ -172,7 +168,9 @@ export function groundHeight(x: number, z: number): number {
     + island(43, -121, 48, 36, 14.0)
     + island(-81, -135, 35, 34, 12.0);
   const clearShore = THREE.MathUtils.smoothstep(pondFraction(x, z), 1.06, 1.38);
-  return -0.024 + slope * roll + (mossIslands + distantGround) * clearShore;
+  const stream = gardenStreamProfile(z);
+  const channel = stream.strength * 0.78 * Math.exp(-Math.pow((x - stream.x) / stream.width, 4));
+  return -0.024 + slope * roll + (mossIslands + distantGround) * clearShore - channel;
 }
 
 /**
@@ -183,7 +181,9 @@ export function groundHeight(x: number, z: number): number {
 export function createGardenTrees(scene: THREE.Scene, bark: THREE.MeshStandardMaterial) {
   const random = randomGenerator(6427);
   const foliage: THREE.InstancedMesh[] = [];
-  const wind = { value: 0 };
+  const wind = createWindState();
+  const swaying: { trunks: THREE.InstancedMesh; crowns: THREE.InstancedMesh; plants: Planting[] }[] = [];
+  const swayTransform = new THREE.Object3D();
   const makeGrove = (preset: string, seed: number, planting: Planting[]) => {
     const tree = new Tree();
     tree.loadPreset(preset);
@@ -250,18 +250,7 @@ export function createGardenTrees(scene: THREE.Scene, bark: THREE.MeshStandardMa
       colors.set([color.r, color.g, color.b], i * 3);
     }
     leaves.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    leafMaterial.onBeforeCompile = (shader) => {
-      shader.uniforms.gardenWindTime = wind;
-      shader.vertexShader = 'uniform float gardenWindTime;\n' + shader.vertexShader;
-      shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', `
-        #include <begin_vertex>
-        float leafFlex = smoothstep(0.12, 1.0, position.y);
-        float breeze = sin(gardenWindTime * 0.78 + position.y * 8.0 + position.x * 12.0);
-        transformed.x += breeze * leafFlex * 0.0028;
-        transformed.z += sin(gardenWindTime * 0.52 + position.z * 10.0) * leafFlex * 0.0019;
-      `);
-    };
-    leafMaterial.customProgramCacheKey = () => 'garden-leaf-volume-wind-v1';
+    addFoliageWind(leafMaterial, wind, 0.014);
     const trunks = new THREE.InstancedMesh(branches, bark, planting.length);
     const crowns = new THREE.InstancedMesh(leaves, leafMaterial, planting.length);
     trunks.name = `garden-specimen-${preset}-trunks`;
@@ -282,6 +271,7 @@ export function createGardenTrees(scene: THREE.Scene, bark: THREE.MeshStandardMa
     crowns.computeBoundingSphere();
     scene.add(trunks, crowns);
     foliage.push(crowns);
+    swaying.push({ trunks, crowns, plants: planting });
     // The generator's own shader bypasses instance matrices. Its geometries and
     // cutout map are reused above with an instancing-safe physical material.
     (tree.branchesMesh.material as THREE.Material).dispose();
@@ -289,8 +279,30 @@ export function createGardenTrees(scene: THREE.Scene, bark: THREE.MeshStandardMa
   };
 
   const p = (x: number, z: number, height: number, breadth = 1): Planting => ({ x, z, height, breadth, yaw: random() * Math.PI * 2 });
-  makeGrove('Ash Medium', 38734, [p(-10.4,-5.8,8.2,0.94), p(16.2,-24.0,8.6,0.82), p(-23.0,-35.0,9.0,0.92)]);
-  makeGrove('Oak Medium', 12461, [p(-2.1,-17.5,6.4,1.12), p(7.4,-36.5,8.2,1.05)]);
-  foliage.push(...createNiwaki(scene, bark, wind));
-  return { foliage, update(time: number, reducedMotion: boolean) { wind.value = reducedMotion ? 0 : time; } };
+  makeGrove('Ash Medium', 38734, [p(-10.4,-5.8,8.2,0.94), p(21.5,-26.0,10.5,0.82), p(-23.0,-35.0,9.0,0.92), p(-34,-61,13.2,0.84), p(31,-78,15,0.90), p(-13,-112,15.5,0.82)]);
+  makeGrove('Oak Medium', 12461, [p(-2.1,-17.5,6.4,1.12), p(7.4,-36.5,8.2,1.05), p(6,-64,11.7,1.05), p(-53,-96,14.4,0.91)]);
+  const pine = createNiwaki(scene, bark, wind);
+  foliage.push(pine.needles);
+  return { foliage, wind, update(time: number, reducedMotion: boolean) {
+    updateWind(wind, time, reducedMotion);
+    for (const grove of swaying) {
+      grove.plants.forEach((plant,index) => {
+        const gust = sampleWind(time,plant.x,plant.z);
+        const bend = reducedMotion ? 0 : 0.034;
+        swayTransform.position.set(plant.x,groundHeight(plant.x,plant.z),plant.z);
+        swayTransform.rotation.set(gust.z*bend,plant.yaw,-gust.x*bend);
+        const breadth=plant.breadth ?? 1;
+        swayTransform.scale.set(plant.height*breadth,plant.height,plant.height*breadth);
+        swayTransform.updateMatrix();
+        grove.trunks.setMatrixAt(index,swayTransform.matrix);
+        grove.crowns.setMatrixAt(index,swayTransform.matrix);
+      });
+      grove.trunks.instanceMatrix.needsUpdate=true;
+      grove.crowns.instanceMatrix.needsUpdate=true;
+    }
+    const gust = sampleWind(time,pine.group.position.x,pine.group.position.z);
+    pine.group.rotation.x = reducedMotion ? 0 : gust.z*0.022;
+    pine.group.rotation.z = reducedMotion ? 0 : -gust.x*0.022;
+  } };
+
 }

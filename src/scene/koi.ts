@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { horizontal, POND, pondFraction, randomGenerator } from './common';
+import { horizontal, POND, pondFloorY, pondFraction, randomGenerator } from './common';
 
 interface Fish {
   group: THREE.Group;
@@ -7,6 +7,7 @@ interface Fish {
   fins: THREE.Object3D[];
   shadow: THREE.Mesh;
   heading: number;
+  pitch: number;
   speed: number;
   panicUntil: number;
   escapeHeading: number;
@@ -17,6 +18,7 @@ interface Fish {
   wave: { value: number };
   amplitude: { value: number };
   bend: { value: number };
+  depth: { value: number };
 }
 
 interface Pellet {
@@ -29,12 +31,37 @@ interface Pellet {
   initialVelocity: number;
   flightDuration: number;
   landedAt: number | null;
+  sinkRate: number;
   born: number;
   active: boolean;
 }
 
 const FOOD_GRAVITY = 9.81;
 const FOOD_SURFACE_Y = POND.waterY + 0.028;
+const FOOD_WETTING_SECONDS = 0.85;
+
+function verticalBounds(koi: Fish) {
+  const sine = Math.sin(koi.pitch), cosine = Math.cos(koi.pitch);
+  const position = koi.group.position;
+  const aheadX = Math.sin(koi.heading) * koi.size * 1.1;
+  const aheadZ = Math.cos(koi.heading) * koi.size * 1.1;
+  const sideX = Math.cos(koi.heading) * koi.size * 0.4;
+  const sideZ = -Math.sin(koi.heading) * koi.size * 0.4;
+  // The tail and nose can overhang a higher part of the sloped bank; centre
+  // clearance alone would let a diving fish clip through that higher substrate.
+  const floor = Math.max(pondFloorY(position.x, position.z),
+    pondFloorY(position.x + aheadX, position.z + aheadZ), pondFloorY(position.x - aheadX, position.z - aheadZ),
+    pondFloorY(position.x + sideX, position.z + sideZ), pondFloorY(position.x - sideX, position.z - sideZ));
+  // Conservative silhouette envelope for dorsal fin, shoulders and forked tail.
+  // Include a small bank/body-flex margin and clear the lowest water trough.
+  const upper = Math.max(0.30 * cosine + 0.21 * sine, 0.19 * cosine + 0.66 * sine,
+    0.21 * cosine - 1.07 * sine) * koi.size + 0.025;
+  const lower = Math.max(0.18 * cosine - 0.66 * sine, 0.21 * cosine + 1.07 * sine) * koi.size + 0.025;
+  return {
+    min: floor + lower + 0.09,
+    max: POND.waterY - 0.17 - upper,
+  };
+}
 
 function koiBody(seed: number, variety: number): THREE.BufferGeometry {
   const vertices: number[] = [];
@@ -92,19 +119,27 @@ function makeFish(scene: THREE.Scene, index: number, softMap: THREE.Texture): Fi
   group.userData.skipAO = true;
   const variety = [0, 1, 3, 0, 2, 0, 3, 1, 4, 0, 2, 3, 0, 1][index];
   const wave = { value: random() * Math.PI * 2 }, amplitude = { value: 0.04 }, bend = { value: 0 };
+  const depth = { value: 1 };
   const bodyMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.32, metalness: 0 });
   bodyMaterial.onBeforeCompile = (shader) => {
     shader.uniforms.koiWave = wave;
     shader.uniforms.koiAmplitude = amplitude;
     shader.uniforms.koiBend = bend;
+    shader.uniforms.koiDepth = depth;
     shader.vertexShader = 'uniform float koiWave; uniform float koiAmplitude; uniform float koiBend;\n' + shader.vertexShader;
     shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', `
       #include <begin_vertex>
       float bodyFlex = 1.0 - smoothstep(-0.70, 0.40, position.z);
       transformed.x += (sin(koiWave + position.z * 4.6) * koiAmplitude + koiBend) * bodyFlex * bodyFlex;
     `);
+    shader.fragmentShader = 'uniform float koiDepth;\n' + shader.fragmentShader;
+    shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>', `
+      #include <color_fragment>
+      float absorption = 1.0 - exp(-max(koiDepth, 0.0) * 0.24);
+      diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.025, 0.09, 0.066), absorption * 0.48);
+    `);
   };
-  bodyMaterial.customProgramCacheKey = () => 'koi-body-flex-v1';
+  bodyMaterial.customProgramCacheKey = () => 'koi-body-flex-depth-v2';
   const body = new THREE.Mesh(koiBody(index + 1, variety), bodyMaterial);
   body.name = 'rounded-koi-body';
   group.add(body);
@@ -157,54 +192,54 @@ function makeFish(scene: THREE.Scene, index: number, softMap: THREE.Texture): Fi
   group.scale.setScalar(size);
   const angle = index / 14 * Math.PI * 2;
   const r = 0.36 + random() * 0.33;
-  group.position.set(POND.x + Math.cos(angle) * POND.rx * r, -0.18 - random() * 0.07, POND.z + Math.sin(angle) * POND.rz * r);
+  group.position.set(POND.x + Math.cos(angle) * POND.rx * r, -0.65 - random() * 0.9, POND.z + Math.sin(angle) * POND.rz * r);
   const heading = angle + Math.PI / 2;
   group.rotation.y = heading;
   scene.add(group);
-  const shadow = new THREE.Mesh(horizontal(new THREE.PlaneGeometry(0.75, 1.8)), new THREE.MeshBasicMaterial({ color: '#14392d', map: softMap, transparent: true, opacity: 0.32, depthWrite: false }));
+  const shadow = new THREE.Mesh(horizontal(new THREE.PlaneGeometry(0.75, 1.8, 2, 4)), new THREE.MeshBasicMaterial({ color: '#14392d', map: softMap, transparent: true, opacity: 0.32, depthWrite: false }));
   shadow.name = `koi-shadow-${index}`;
   shadow.userData.skipAO = true;
-  shadow.position.set(group.position.x + 0.15, -0.57, group.position.z + 0.10);
+  shadow.position.set(group.position.x + 0.15, pondFloorY(group.position.x, group.position.z) + 0.06, group.position.z + 0.10);
   shadow.scale.setScalar(size);
   scene.add(shadow);
-  return { group, tail, fins, shadow, heading, speed: 0.32 + random() * 0.16, panicUntil: 0, escapeHeading: 0, phase: random() * 6.28, size, feeding: false, swimPhase: wave.value, wave, amplitude, bend };
+  return { group, tail, fins, shadow, heading, pitch: 0, speed: 0.32 + random() * 0.16, panicUntil: 0, escapeHeading: 0, phase: random() * 6.28, size, feeding: false, swimPhase: wave.value, wave, amplitude, bend, depth };
 }
 
-/** Closest points of two body-axis segments; radii turn these into capsules. */
+/** Closest points of two pitched body axes in 3D; radii form solid capsules. */
 function bodyContact(a: Fish, b: Fish) {
   const ah = a.size * 0.45, bh = b.size * 0.45;
-  const ax = Math.sin(a.heading) * ah, az = Math.cos(a.heading) * ah;
-  const bx = Math.sin(b.heading) * bh, bz = Math.cos(b.heading) * bh;
+  const ax = Math.sin(a.heading) * Math.cos(a.pitch) * ah, ay = Math.sin(a.pitch) * ah, az = Math.cos(a.heading) * Math.cos(a.pitch) * ah;
+  const bx = Math.sin(b.heading) * Math.cos(b.pitch) * bh, by = Math.sin(b.pitch) * bh, bz = Math.cos(b.heading) * Math.cos(b.pitch) * bh;
   const ap = a.group.position, bp = b.group.position;
-  const a0x = ap.x - ax, a0z = ap.z - az, b0x = bp.x - bx, b0z = bp.z - bz;
-  let best = Infinity, dx = 0, dz = 0;
-  const candidate = (x: number, z: number, sx: number, sz: number, ux: number, uz: number, flip: number) => {
-    const t = THREE.MathUtils.clamp(((x - sx) * ux + (z - sz) * uz) / (ux * ux + uz * uz), 0, 1);
-    const cx = (x - sx - ux * t) * flip, cz = (z - sz - uz * t) * flip;
-    const d = cx * cx + cz * cz;
-    if (d < best) { best = d; dx = cx; dz = cz; }
+  const wx = ap.x - ax - bp.x + bx, wy = ap.y - ay - bp.y + by, wz = ap.z - az - bp.z + bz;
+  const ux = ax * 2, uy = ay * 2, uz = az * 2, vx = bx * 2, vy = by * 2, vz = bz * 2;
+  const aa = ux * ux + uy * uy + uz * uz, bb = ux * vx + uy * vy + uz * vz, cc = vx * vx + vy * vy + vz * vz;
+  const dd = ux * wx + uy * wy + uz * wz, ee = vx * wx + vy * wy + vz * wz;
+  const denominator = aa * cc - bb * bb;
+  let s = denominator > 1e-10 ? THREE.MathUtils.clamp((bb * ee - cc * dd) / denominator, 0, 1) : 0;
+  let t = (bb * s + ee) / cc;
+  if (t < 0) { t = 0; s = THREE.MathUtils.clamp(-dd / aa, 0, 1); }
+  else if (t > 1) { t = 1; s = THREE.MathUtils.clamp((bb - dd) / aa, 0, 1); }
+  let dx = wx + s * ux - t * vx, dy = wy + s * uy - t * vy, dz = wz + s * uz - t * vz;
+  const distance = Math.hypot(dx, dy, dz);
+  if (distance < 1e-8) { dx = ap.x - bp.x; dy = ap.y - bp.y; dz = ap.z - bp.z; }
+  const normalLength = Math.hypot(dx, dy, dz);
+  return {
+    distance, nx: normalLength > 1e-8 ? dx / normalLength : Math.cos(a.heading),
+    ny: normalLength > 1e-8 ? dy / normalLength : 0,
+    nz: normalLength > 1e-8 ? dz / normalLength : -Math.sin(a.heading),
+    radius: (a.size + b.size) * 0.255,
   };
-  candidate(a0x, a0z, b0x, b0z, 2 * bx, 2 * bz, 1);
-  candidate(ap.x + ax, ap.z + az, b0x, b0z, 2 * bx, 2 * bz, 1);
-  candidate(b0x, b0z, a0x, a0z, 2 * ax, 2 * az, -1);
-  candidate(bp.x + bx, bp.z + bz, a0x, a0z, 2 * ax, 2 * az, -1);
-  const cross = ax * bz - az * bx;
-  if (Math.abs(cross) > 1e-8) {
-    const wx = b0x - a0x, wz = b0z - a0z;
-    const s = (wx * bz - wz * bx) / (2 * cross), t = (wx * az - wz * ax) / (2 * cross);
-    if (s >= 0 && s <= 1 && t >= 0 && t <= 1) { best = 0; dx = ap.x - bp.x; dz = ap.z - bp.z; }
-  }
-  const distance = Math.sqrt(best);
-  const normalLength = Math.hypot(dx, dz);
-  return { distance, nx: normalLength > 1e-8 ? dx / normalLength : Math.cos(a.heading), nz: normalLength > 1e-8 ? dz / normalLength : -Math.sin(a.heading), radius: (a.size + b.size) * 0.255 };
 }
 
-export function createKoi(scene: THREE.Scene, softMap: THREE.Texture, onFoodSplash?: (x: number, z: number) => void) {
+export function createKoi(scene: THREE.Scene, softMap: THREE.Texture,
+  onFoodSplash?: (x: number, z: number) => void,
+  onSwimWake?: (x: number, z: number, strength: number) => void) {
   const random = randomGenerator(337);
   const fish = Array.from({ length: 14 }, (_, index) => makeFish(scene, index, softMap));
   const pellets: Pellet[] = Array.from({ length: 48 }, () => ({
     x: 0, y: 0, z: 0, originX: 0, originZ: 0, initialY: 0,
-    initialVelocity: 0, flightDuration: 0, landedAt: null, born: 0, active: false,
+    initialVelocity: 0, flightDuration: 0, landedAt: null, sinkRate: 0.055, born: 0, active: false,
   }));
   const pelletMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(0.044, 8, 6), new THREE.MeshStandardMaterial({ color: '#d4a65b', roughness: 0.86 }), pellets.length);
   pelletMesh.name = 'falling-fish-food';
@@ -215,6 +250,7 @@ export function createKoi(scene: THREE.Scene, softMap: THREE.Texture, onFoodSpla
   scene.add(pelletMesh);
   const dummy = new THREE.Object3D();
   let pelletIndex = 0;
+  const nextWake = fish.map((_, i) => 0.24 + i / fish.length * 0.24);
 
   function feed(x: number, z: number, time: number): number {
     for (let i = 0; i < 9; i++) {
@@ -241,6 +277,7 @@ export function createKoi(scene: THREE.Scene, softMap: THREE.Texture, onFoodSpla
         pellet.initialVelocity ** 2 + 2 * FOOD_GRAVITY * (pellet.initialY - FOOD_SURFACE_Y),
       )) / FOOD_GRAVITY;
       pellet.landedAt = null;
+      pellet.sinkRate = 0.045 + random() * 0.02;
       pellet.born = time;
       pellet.active = true;
       pelletIndex = (pelletIndex + 1) % pellets.length;
@@ -283,15 +320,18 @@ export function createKoi(scene: THREE.Scene, softMap: THREE.Texture, onFoodSpla
         continue;
       }
       if (pellet.landedAt !== null) {
-        const floatingAge = Math.max(0, time - pellet.landedAt);
-        pellet.y = FOOD_SURFACE_Y + Math.sin(time * 2 + i) * 0.008 * Math.min(floatingAge * 3, 1);
-        pellet.x = pellet.originX + (Math.sin(floatingAge * 0.45 + i) - Math.sin(i)) * 0.035 + floatingAge * 0.008;
-        pellet.z = pellet.originZ + (Math.cos(floatingAge * 0.38 + i) - Math.cos(i)) * 0.035;
+        const wetAge = Math.max(0, time - pellet.landedAt);
+        const sinkingAge = Math.max(0, wetAge - FOOD_WETTING_SECONDS);
+        const surfaceBob = Math.sin(time * 2 + i) * 0.006 * Math.min(wetAge * 3, 1) * Math.exp(-sinkingAge * 3);
+        pellet.y = FOOD_SURFACE_Y - sinkingAge * pellet.sinkRate + surfaceBob;
+        pellet.x = pellet.originX + (Math.sin(wetAge * 0.45 + i) - Math.sin(i)) * 0.035 + wetAge * 0.008;
+        pellet.z = pellet.originZ + (Math.cos(wetAge * 0.38 + i) - Math.cos(i)) * 0.035;
         const fraction = pondFraction(pellet.x, pellet.z);
         if (fraction > 0.94) {
           pellet.x = POND.x + (pellet.x - POND.x) * 0.94 / fraction;
           pellet.z = POND.z + (pellet.z - POND.z) * 0.94 / fraction;
         }
+        pellet.y = Math.max(pondFloorY(pellet.x, pellet.z) + 0.055, pellet.y);
       }
     }
     for (let i = 0; i < fish.length; i++) {
@@ -300,32 +340,43 @@ export function createKoi(scene: THREE.Scene, softMap: THREE.Texture, onFoodSpla
       let targetHeading = koi.heading + Math.sin(time * 0.33 + koi.phase) * 0.7 * dt;
       let targetSpeed = 0.38 + Math.sin(time * 0.4 + koi.phase) * 0.075;
       let turnRate = 0.8;
+      // Long, independent depth cycles give the school a real water column.
+      let targetY = -1.12 + Math.sin(time * 0.18 + koi.phase) * 0.57 + Math.sin(time * 0.071 + koi.phase * 2.1) * 0.19;
       let closest: Pellet | null = null;
       let distance = 60;
       koi.feeding = false;
       for (const pellet of pellets) {
         if (!pellet.active || pellet.landedAt === null) continue;
-        const d = Math.hypot(position.x - pellet.x, position.z - pellet.z);
+        const d = Math.hypot(position.x - pellet.x, position.y - pellet.y, position.z - pellet.z);
         if (d < distance) { closest = pellet; distance = d; }
       }
       if (closest && distance < 11 && time >= koi.panicUntil) {
         targetHeading = Math.atan2(closest.x - position.x, closest.z - position.z);
         targetSpeed = distance > 0.7 ? 1.10 : 0.40;
+        targetY = closest.y - 0.10;
         turnRate = 2.2;
         koi.feeding = true;
-        if (distance < 0.34) closest.active = false;
+        // Reach with the actual pitched mouth, not the horizontal centre.
+        const mouthDistance = Math.hypot(
+          position.x + Math.sin(koi.heading) * Math.cos(koi.pitch) * koi.size * 0.65 - closest.x,
+          position.y + (Math.sin(koi.pitch) * 0.65 - Math.cos(koi.pitch) * 0.025) * koi.size - closest.y,
+          position.z + Math.cos(koi.heading) * Math.cos(koi.pitch) * koi.size * 0.65 - closest.z,
+        );
+        if (mouthDistance < 0.24 * koi.size + 0.06) closest.active = false;
       }
       if (time < koi.panicUntil) {
         targetHeading = koi.escapeHeading;
         targetSpeed = 0.5 + Math.min(koi.panicUntil - time, 2) * 1.5;
+        targetY = position.y - 0.8;
         turnRate = 5;
       }
-      let avoidX = 0, avoidZ = 0, pressure = 0;
+      let avoidX = 0, avoidY = 0, avoidZ = 0, pressure = 0;
       for (const other of fish) {
         if (other === koi || position.distanceToSquared(other.group.position) > 4) continue;
         const contact = bodyContact(koi, other);
         const urgency = THREE.MathUtils.clamp((contact.radius + 0.48 - contact.distance) / 0.48, 0, 1);
         avoidX += contact.nx * urgency;
+        avoidY += contact.ny * urgency;
         avoidZ += contact.nz * urgency;
         pressure += urgency;
       }
@@ -335,6 +386,7 @@ export function createKoi(scene: THREE.Scene, softMap: THREE.Texture, onFoodSpla
           Math.cos(targetHeading) + avoidZ * 1.25 - Math.sin(koi.heading) * pressure * 0.18);
         targetSpeed *= 1 - Math.min(pressure * 0.16, 0.48);
         turnRate = Math.max(turnRate, 2.5);
+        targetY += avoidY * 0.5;
       }
       const boundary = pondFraction(position.x, position.z);
       const nextBoundary = pondFraction(position.x + Math.sin(koi.heading) * 0.8, position.z + Math.cos(koi.heading) * 0.8);
@@ -346,8 +398,14 @@ export function createKoi(scene: THREE.Scene, softMap: THREE.Texture, onFoodSpla
       const difference = Math.atan2(Math.sin(targetHeading - koi.heading), Math.cos(targetHeading - koi.heading));
       koi.heading += Math.max(-turnRate * dt, Math.min(turnRate * dt, difference));
       koi.speed += (targetSpeed - koi.speed) * Math.min(dt * 3.2, 1);
-      position.x += Math.sin(koi.heading) * koi.speed * dt * movement;
-      position.z += Math.cos(koi.heading) * koi.speed * dt * movement;
+      const bounds = verticalBounds(koi);
+      targetY = THREE.MathUtils.clamp(targetY, bounds.min, bounds.max);
+      const targetPitch = THREE.MathUtils.clamp(Math.atan2((targetY - position.y) * 0.85, Math.max(koi.speed, 0.25)), -0.30, 0.30);
+      koi.pitch += THREE.MathUtils.clamp(targetPitch - koi.pitch, -dt * 0.55, dt * 0.55);
+      const travel = koi.speed * dt * movement;
+      position.x += Math.sin(koi.heading) * Math.cos(koi.pitch) * travel;
+      position.y += Math.sin(koi.pitch) * travel;
+      position.z += Math.cos(koi.heading) * Math.cos(koi.pitch) * travel;
       // Steering alone cannot guarantee containment during repeated fast scares.
       // Project a rare overshoot onto a safe inner shore and turn it back inward.
       const afterStep = pondFraction(position.x, position.z);
@@ -358,8 +416,9 @@ export function createKoi(scene: THREE.Scene, softMap: THREE.Texture, onFoodSpla
         koi.escapeHeading = koi.heading;
         koi.speed = Math.min(koi.speed, 1.8);
       }
-      position.y = -0.21 + Math.sin(time * 0.8 + koi.phase) * 0.035 + (koi.feeding ? 0.065 : 0);
-      koi.group.rotation.y = koi.heading;
+      const afterBounds = verticalBounds(koi);
+      position.y = THREE.MathUtils.clamp(position.y, afterBounds.min, afterBounds.max);
+      koi.group.rotation.set(-koi.pitch, koi.heading, 0, 'YXZ');
       koi.swimPhase += dt * (3.6 + koi.speed * 4);
       koi.wave.value = koi.swimPhase;
       koi.amplitude.value = (0.025 + Math.min(koi.speed, 2) * 0.026) * movement;
@@ -370,8 +429,7 @@ export function createKoi(scene: THREE.Scene, softMap: THREE.Texture, onFoodSpla
       koi.group.rotation.z = Math.max(-0.07, Math.min(0.07, difference * 0.08));
       koi.fins[0].rotation.y = swim * 0.13 * movement;
       koi.fins[1].rotation.y = -swim * 0.13 * movement;
-      koi.shadow.position.set(position.x + 0.15, -0.57, position.z + 0.1);
-      koi.shadow.rotation.z = -koi.heading;
+      koi.shadow.rotation.y = koi.heading;
     }
     // Positional capsule constraints provide a final guarantee when urgent
     // feeding/scares turn fish faster than steering can keep them apart.
@@ -384,8 +442,10 @@ export function createKoi(scene: THREE.Scene, softMap: THREE.Texture, onFoodSpla
         largestOverlap = Math.max(largestOverlap, overlap);
         const push = overlap * 0.5 + 0.0002;
         fish[a].group.position.x += contact.nx * push;
+        fish[a].group.position.y += contact.ny * push;
         fish[a].group.position.z += contact.nz * push;
         fish[b].group.position.x -= contact.nx * push;
+        fish[b].group.position.y -= contact.ny * push;
         fish[b].group.position.z -= contact.nz * push;
       }
       for (const koi of fish) {
@@ -396,10 +456,40 @@ export function createKoi(scene: THREE.Scene, softMap: THREE.Texture, onFoodSpla
           position.x = POND.x + (position.x - POND.x) * 0.86 / fraction;
           position.z = POND.z + (position.z - POND.z) * 0.86 / fraction;
         }
+        const bounds = verticalBounds(koi);
+        position.y = THREE.MathUtils.clamp(position.y, bounds.min, bounds.max);
       }
       if (largestOverlap < 0.0005) break;
     }
-    for (const koi of fish) koi.shadow.position.set(koi.group.position.x + 0.15, -0.57, koi.group.position.z + 0.1);
+    for (let i = 0; i < fish.length; i++) {
+      const koi = fish[i], position = koi.group.position;
+      koi.depth.value = POND.waterY - position.y;
+      const heightAboveFloor = position.y - pondFloorY(position.x, position.z);
+      koi.shadow.position.set(position.x + 0.12 * heightAboveFloor, pondFloorY(position.x, position.z) + 0.06, position.z + 0.08 * heightAboveFloor);
+      koi.shadow.scale.setScalar(koi.size * (1 + heightAboveFloor * 0.16));
+      (koi.shadow.material as THREE.MeshBasicMaterial).opacity = 0.25 * Math.exp(-heightAboveFloor * 0.9);
+      const shadowVertices = koi.shadow.geometry.getAttribute('position');
+      const shadowScale = koi.shadow.scale.x, c = Math.cos(koi.heading), s = Math.sin(koi.heading);
+      for (let vertex = 0; vertex < shadowVertices.count; vertex++) {
+        const x = shadowVertices.getX(vertex), z = shadowVertices.getZ(vertex);
+        const floorX = koi.shadow.position.x + (x * c + z * s) * shadowScale;
+        const floorZ = koi.shadow.position.z + (z * c - x * s) * shadowScale;
+        shadowVertices.setY(vertex, (pondFloorY(floorX, floorZ) + 0.025 - koi.shadow.position.y) / shadowScale);
+      }
+      shadowVertices.needsUpdate = true;
+      // A time schedule avoids multiplying wake strength with frame rate.
+      // Skip missed pulses after a pause, rather than injecting them in a burst.
+      if (time >= nextWake[i]) {
+        nextWake[i] += (Math.floor((time - nextWake[i]) / 0.24) + 1) * 0.24;
+        const surfaceInfluence = Math.max(0, 1 - koi.depth.value / 1.0);
+        if (surfaceInfluence > 0 && onSwimWake) {
+          const x = position.x - Math.sin(koi.heading) * Math.cos(koi.pitch) * koi.size * 0.92;
+          const z = position.z - Math.cos(koi.heading) * Math.cos(koi.pitch) * koi.size * 0.92;
+          const strength = surfaceInfluence ** 2 * (0.022 + Math.min(koi.speed, 3) * 0.035) * (reducedMotion ? 0.35 : 1);
+          if (pondFraction(x, z) < 0.99) onSwimWake(x, z, strength);
+        }
+      }
+    }
     for (let i = 0; i < pellets.length; i++) {
       const pellet = pellets[i];
       dummy.position.set(pellet.x, pellet.y, pellet.z);
@@ -416,7 +506,10 @@ export function createKoi(scene: THREE.Scene, softMap: THREE.Texture, onFoodSpla
       fish: fish.map((koi) => {
         const screen = koi.group.position.clone().project(camera);
         return {
-          x: Number(koi.group.position.x.toFixed(3)), z: Number(koi.group.position.z.toFixed(3)),
+          x: Number(koi.group.position.x.toFixed(3)), y: Number(koi.group.position.y.toFixed(3)), z: Number(koi.group.position.z.toFixed(3)),
+          depth: POND.waterY - koi.group.position.y,
+          pitch: koi.pitch,
+          verticalBounds: verticalBounds(koi),
           speed: Number(koi.speed.toFixed(3)),
           heading: koi.heading,
           size: koi.size,
@@ -430,11 +523,14 @@ export function createKoi(scene: THREE.Scene, softMap: THREE.Texture, onFoodSpla
       feedingCount: fish.filter((koi) => koi.feeding).length,
       foodCount: pellets.filter((pellet) => pellet.active).length,
       airborneFoodCount: pellets.filter((pellet) => pellet.active && pellet.landedAt === null).length,
+      sinkingFoodCount: pellets.filter((pellet) => pellet.active && pellet.landedAt !== null && time > pellet.landedAt + FOOD_WETTING_SECONDS).length,
       foodPositions: pellets.filter((pellet) => pellet.active).map((pellet) => {
         const screen = new THREE.Vector3(pellet.x, pellet.y, pellet.z).project(camera);
         return {
           x: pellet.x, y: pellet.y, z: pellet.z,
           airborne: pellet.landedAt === null,
+          sinking: pellet.landedAt !== null && time > pellet.landedAt + FOOD_WETTING_SECONDS,
+          sinkRate: pellet.sinkRate,
           screen: { x: Math.round((screen.x + 1) * width / 2), y: Math.round((1 - screen.y) * height / 2) },
         };
       }),

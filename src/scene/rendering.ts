@@ -114,6 +114,7 @@ export function createRendering(renderer: THREE.WebGLRenderer, scene: THREE.Scen
     occlusion.invalidate();
   }
   return {
+    invalidate() { occlusion.invalidate(); },
     resize(nextWidth: number, nextHeight: number) {
       width = nextWidth; height = nextHeight;
       sizeTargets();
@@ -131,7 +132,6 @@ export function createRendering(renderer: THREE.WebGLRenderer, scene: THREE.Scen
         slowFrames = 0;
         sizeTargets();
       }
-      if (renderer.shadowMap.needsUpdate) occlusion.invalidate();
       renderer.info.reset();
       composer.render();
     },

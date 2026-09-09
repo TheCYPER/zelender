@@ -3,6 +3,8 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { softTexture } from './common';
 import { batchStaticMeshes } from './batching';
 import { createChimeSound } from './chime-audio';
+import { createTeaInteraction, type TeaCup } from './tea-interaction';
+import { sampleWind } from './wind';
 
 type Pendulum = { angle: number; velocity: number };
 
@@ -147,12 +149,18 @@ export function createTeaCorner(room: THREE.Group, wood: THREE.MeshStandardMater
 
   const tea = new THREE.MeshPhysicalMaterial({ color: '#665427', roughness: 0.12, metalness: 0.12, clearcoat: 1 });
   const cupGeometry = lathe([[0.06,0],[0.09,0.005],[0.105,0.035],[0.14,0.15],[0.165,0.24],[0.161,0.25],[0.145,0.248],[0.127,0.16],[0.096,0.052],[0.02,0.033],[0,0.033]]);
+  const cups: TeaCup[] = [];
   for (const [x, z] of [[0.48,0.24], [-0.48,0.29]]) {
     add(tray, new THREE.CylinderGeometry(0.23, 0.205, 0.022, 40), clay, x, 0.046, z);
-    add(tray, cupGeometry, glaze, x, 0.057, z);
-    const liquid = add(tray, new THREE.CircleGeometry(0.136, 40), tea, x, 0.265, z);
+    const cup = new THREE.Group();
+    cup.name = `ceramic-teacup-${cups.length + 1}`;
+    cup.position.set(x, 0.057, z);
+    tray.add(cup);
+    add(cup, cupGeometry, glaze, 0, 0, 0);
+    const liquid = add(cup, new THREE.CircleGeometry(0.136, 40), tea, 0, 0.13, 0);
     liquid.rotation.x = -Math.PI / 2;
     liquid.castShadow = false;
+    cups.push({ object: cup, liquid, fill: 0.42 });
   }
   // An unglazed small dish rests on the linen, with two understated sweets.
   add(table, lathe([[0,0],[0.21,0],[0.25,0.025],[0.28,0.06],[0.26,0.067],[0.2,0.035],[0,0.028]]), glaze, -0.88, 0.956, 0.11);
@@ -200,7 +208,13 @@ export function createTeaCorner(room: THREE.Group, wood: THREE.MeshStandardMater
   const inkStroke = add(paper, new THREE.PlaneGeometry(0.012, 0.40), ink, -0.015, -0.045, 0.018);
   inkStroke.rotation.z = -0.06;
 
+  // Only furniture, tray and saucers are static. Keep complete ceramic subtrees
+  // together so dragging never leaves the spout, handle, tea or steam behind.
+  const movable = [pot, ...cups.map(cup => cup.object)];
+  movable.forEach(object => object.removeFromParent());
   batchStaticMeshes(table, true);
+  movable.forEach(object => tray.add(object));
+  const teaInteraction = createTeaInteraction(tray, pot, cups);
   const bellAcross: Pendulum = { angle: 0, velocity: 0 };
   const bellDepth: Pendulum = { angle: 0, velocity: 0 };
   const tongue: Pendulum = { angle: 0, velocity: 0 };
@@ -212,6 +226,7 @@ export function createTeaCorner(room: THREE.Group, wood: THREE.MeshStandardMater
   let disposed = false;
 
   return {
+    interaction: teaInteraction.interaction,
     chimeTarget: chime,
     ring() {
       if (disposed) return;
@@ -230,6 +245,7 @@ export function createTeaCorner(room: THREE.Group, wood: THREE.MeshStandardMater
       reduceMotion = reducedMotion;
       let remaining = previousTime === undefined ? 0 : THREE.MathUtils.clamp(time - previousTime, 0, 0.06);
       previousTime = time;
+      teaInteraction.update(remaining, time, reducedMotion);
       if (reducedMotion) {
         for (const pendulum of pendulums) { pendulum.angle = 0; pendulum.velocity = 0; }
       } else {
@@ -238,9 +254,10 @@ export function createTeaCorner(room: THREE.Group, wood: THREE.MeshStandardMater
         // damping and the click impulse, rather than a prescribed sine rotation.
         while (remaining > 0) {
           const dt = Math.min(remaining, 1 / 120);
-          const breeze = Math.sin(time * 0.77) * 0.09 + Math.sin(time * 1.19) * 0.035;
+          const wind = sampleWind(time, hanging.position.x, hanging.position.z);
+          const breeze = wind.x * 0.7;
           const acceleration = advancePendulum(bellAcross, 10.8, 1.4, breeze, dt, 0.48);
-          advancePendulum(bellDepth, 12.5, 1.7, breeze * 0.38, dt, 0.24);
+          advancePendulum(bellDepth, 12.5, 1.7, wind.z * 0.4, dt, 0.24);
           advancePendulum(tongue, 22, 1.15, -acceleration * 0.55 + breeze * 0.8, dt);
           if (Math.abs(tongue.angle) > 0.25) {
             tongue.angle = Math.sign(tongue.angle) * 0.25;
@@ -264,6 +281,6 @@ export function createTeaCorner(room: THREE.Group, wood: THREE.MeshStandardMater
       }
       steamGeometry.getAttribute('position').needsUpdate = true;
     },
-    dispose() { disposed = true; sound.dispose(); },
+    dispose() { disposed = true; sound.dispose(); teaInteraction.dispose(); },
   };
 }

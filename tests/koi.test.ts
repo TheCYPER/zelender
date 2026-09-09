@@ -2,19 +2,22 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { createKoi } from '../src/scene/koi';
-import { POND, pondFraction, pondPoint } from '../src/scene/common';
+import { POND, pondFloorY, pondFraction, pondPoint } from '../src/scene/common';
+import { PondWaves } from '../src/scene/waves';
+import { createWater } from '../src/scene/water';
 
 function foodSimulation() {
   const contacts: { x: number; z: number }[] = [];
-  const koi = createKoi(new THREE.Scene(), new THREE.Texture(), (x, z) => contacts.push({ x, z }));
+  const scene = new THREE.Scene();
+  const koi = createKoi(scene, new THREE.Texture(), (x, z) => contacts.push({ x, z }));
   const camera = new THREE.PerspectiveCamera(46, 1, 0.1, 100);
   camera.position.set(0, 19, 4);
   camera.lookAt(0, 0, 0);
   camera.updateMatrixWorld();
-  return { koi, contacts, state: (time: number) => koi.debug(time, camera, 1000, 1000) };
+  return { koi, scene, contacts, state: (time: number) => koi.debug(time, camera, 1000, 1000) };
 }
 
-test('food accelerates downward, then floats and splashes once per pellet', () => {
+test('food accelerates downward, wets briefly, then slowly sinks after exactly one splash', () => {
   const sim = foodSimulation();
   sim.koi.feed(POND.x, POND.z, 0);
   const initial = sim.state(0);
@@ -42,8 +45,17 @@ test('food accelerates downward, then floats and splashes once per pellet', () =
   assert.equal(sim.contacts.length, initial.foodCount);
   assert(landed.feedingCount > 0);
   assert(landed.foodPositions.every((pellet) => Math.abs(pellet.y - POND.waterY) < 0.05));
-  for (let i = 1; i <= 60; i++) sim.koi.update(0.9 + i / 60, 0, false);
-  assert.equal(sim.contacts.length, initial.foodCount, 'floating pellets must not repeat their landing callback');
+  sim.koi.update(3, 0, false);
+  const wet = sim.state(3);
+  sim.koi.update(7, 0, false);
+  const sunk = sim.state(7);
+  assert.equal(sunk.sinkingFoodCount, initial.foodCount);
+  wet.foodPositions.forEach((pellet, i) => {
+    const drop = pellet.y - sunk.foodPositions[i].y;
+    assert(drop > 0.17 && drop < 0.27, 'food must visibly descend at a slow settling speed');
+    assert(sunk.foodPositions[i].y > pondFloorY(pellet.x, pellet.z));
+  });
+  assert.equal(sim.contacts.length, initial.foodCount, 'sinking pellets must not repeat their landing callback');
 });
 
 test('a koi directly below airborne food cannot eat or pursue it', () => {
@@ -58,7 +70,10 @@ test('a koi directly below airborne food cannot eat or pursue it', () => {
   assert.equal(sim.contacts.length, 0);
   sim.koi.update(0.9, 0, false);
   assert.equal(sim.contacts.length, before.foodCount);
-  assert(sim.state(0.9).foodCount < before.foodCount, 'the fish can eat once the pellets reach the water');
+  assert.equal(sim.state(0.9).foodCount, before.foodCount, 'fish well below the surface cannot eat food through a vertical gap');
+  assert(sim.state(0.9).feedingCount > 0, 'landed food may attract fish before their mouths reach it');
+  for (let frame = 1; frame <= 480; frame++) sim.koi.update(0.9 + frame / 60, 1 / 60, false);
+  assert(sim.state(8.9).foodCount < before.foodCount, 'fish can consume food after rising to its actual depth');
 });
 
 test('feeding near every side of the organic shoreline still throws food into water', () => {
@@ -87,22 +102,115 @@ test('body volumes remain separated when koi crowd food and repeatedly flee', ()
     const fish = sim.state(time).fish;
     for (let a = 0; a < fish.length; a++) for (let b = a + 1; b < fish.length; b++) {
       const first = fish[a], second = fish[b];
-      const ux = Math.sin(second.heading), uz = Math.cos(second.heading);
+      const ux = Math.sin(second.heading) * Math.cos(second.pitch), uy = Math.sin(second.pitch), uz = Math.cos(second.heading) * Math.cos(second.pitch);
       // Sample the first fish's long body axis against the second's capsule.
       // This catches nose-to-flank crossings that centre-distance checks miss.
       for (let sample = 0; sample <= 16; sample++) {
         const offset = (sample / 8 - 1) * first.collisionHalfLength;
-        const dx = first.x + Math.sin(first.heading) * offset - second.x;
-        const dz = first.z + Math.cos(first.heading) * offset - second.z;
-        const along = Math.max(-second.collisionHalfLength, Math.min(second.collisionHalfLength, dx * ux + dz * uz));
-        const gap = Math.hypot(dx - ux * along, dz - uz * along) - first.collisionRadius - second.collisionRadius;
+        const dx = first.x + Math.sin(first.heading) * Math.cos(first.pitch) * offset - second.x;
+        const dy = first.y + Math.sin(first.pitch) * offset - second.y;
+        const dz = first.z + Math.cos(first.heading) * Math.cos(first.pitch) * offset - second.z;
+        const along = Math.max(-second.collisionHalfLength, Math.min(second.collisionHalfLength, dx * ux + dy * uy + dz * uz));
+        const gap = Math.hypot(dx - ux * along, dy - uy * along, dz - uz * along) - first.collisionRadius - second.collisionRadius;
         minimumGap = Math.min(minimumGap, gap);
         assert(gap >= -0.006, `Fish ${a}/${b} overlap by ${-gap} at ${time}s`);
       }
     }
     assert(fish.every((koi) => pondFraction(koi.x, koi.z) <= 0.861));
+    assert(fish.every((koi) => koi.y >= koi.verticalBounds.min - 0.001 && koi.y <= koi.verticalBounds.max + 0.001));
   }
   assert(minimumGap < 0.15, 'scenario must exercise close body contacts');
+});
+
+test('koi explore a water column with pitched rises and dives while remaining submerged', () => {
+  const sim = foodSimulation();
+  const depths = Array.from({ length: 14 }, () => ({ min: Infinity, max: -Infinity, up: false, down: false }));
+  for (let frame = 1; frame <= 2400; frame++) {
+    const time = frame / 30;
+    sim.koi.update(time, 1 / 30, false);
+    if (frame % 15) continue;
+    for (const [i, koi] of sim.state(time).fish.entries()) {
+      depths[i].min = Math.min(depths[i].min, koi.y);
+      depths[i].max = Math.max(depths[i].max, koi.y);
+      depths[i].up ||= koi.pitch > 0.05;
+      depths[i].down ||= koi.pitch < -0.05;
+      assert(koi.y <= koi.verticalBounds.max + 0.001);
+      assert(koi.y >= koi.verticalBounds.min - 0.001);
+    }
+  }
+  assert(depths.every(depth => depth.max - depth.min > 0.65), 'each koi must change depth by much more than a small surface bob');
+  assert(depths.every(depth => depth.up && depth.down), 'body attitude must follow rises and dives');
+});
+
+test('fish on separate vertical levels can cross without artificial horizontal repulsion', () => {
+  const sim = foodSimulation();
+  const upper = sim.scene.getObjectByName('koi-0')!, lower = sim.scene.getObjectByName('koi-1')!;
+  upper.position.set(POND.x, -0.45, POND.z);
+  lower.position.set(POND.x, -1.7, POND.z);
+  sim.koi.update(0.1, 0, false);
+  assert(Math.hypot(upper.position.x - lower.position.x, upper.position.z - lower.position.z) < 0.0001);
+  assert(upper.position.y - lower.position.y > 1, 'depth separation must remain available instead of flattening the school');
+});
+
+test('visible bowl geometry follows the same depth contract as fish and food', () => {
+  const scene = new THREE.Scene();
+  const water = createWater(scene);
+  const bowl = scene.getObjectByName('recessed-pond-bowl') as THREE.Mesh;
+  const vertices = bowl.geometry.getAttribute('position');
+  for (let i = 0; i < vertices.count; i++) {
+    assert(Math.abs(vertices.getY(i) - pondFloorY(vertices.getX(i), vertices.getZ(i))) < 0.00001);
+  }
+  assert(POND.waterY - POND.floorY > 2, 'pond must contain a credible swimming depth');
+  water.dispose();
+});
+
+test('pitched fish geometry clears the sloping floor and the water surface during feeding and scares', () => {
+  const sim = foodSimulation();
+  const point = new THREE.Vector3();
+  for (let frame = 1; frame <= 1800; frame++) {
+    const time = frame / 30;
+    if (frame % 240 === 1) sim.koi.feed(POND.x + 3, POND.z + 1, time);
+    if (frame % 240 === 180) sim.koi.startle(POND.x + 3, POND.z + 1, time);
+    sim.koi.update(time, 1 / 30, false);
+    if (frame % 30) continue;
+    sim.scene.updateMatrixWorld(true);
+    for (let i = 0; i < 14; i++) {
+      sim.scene.getObjectByName(`koi-${i}`)!.traverse(object => {
+        if (!(object instanceof THREE.Mesh)) return;
+        const positions = object.geometry.getAttribute('position');
+        for (let vertex = 0; vertex < positions.count; vertex++) {
+          point.fromBufferAttribute(positions, vertex).applyMatrix4(object.matrixWorld);
+          assert(point.y <= POND.waterY - 0.165, `fish ${i} broke the lowest wave trough at ${time}s`);
+          assert(point.y >= pondFloorY(point.x, point.z) + 0.015, `fish ${i} touched the sloping floor at ${time}s`);
+        }
+      });
+    }
+  }
+});
+
+test('shallow fish displace real waves on a fixed time cadence; deep fish do not', () => {
+  function sample(depth: number, fps: number) {
+    const scene = new THREE.Scene();
+    const waves = new PondWaves();
+    const contacts: { x: number; z: number; strength: number }[] = [];
+    const koi = createKoi(scene, new THREE.Texture(), undefined, (x, z, strength) => {
+      contacts.push({ x, z, strength });
+      waves.impulse(x, z, strength);
+    });
+    for (let i = 0; i < 14; i++) scene.getObjectByName(`koi-${i}`)!.position.y = POND.waterY - depth;
+    for (let frame = 1; frame <= fps * 2; frame++) {
+      // Hold fish still to isolate event frequency and surface-distance response.
+      koi.update(frame / fps, 0, false);
+      waves.step(1 / fps);
+    }
+    return { contacts, waves };
+  }
+  const shallow = sample(0.55, 30), faster = sample(0.55, 60), deep = sample(1.65, 30);
+  assert(shallow.contacts.length > 80);
+  assert.equal(shallow.contacts.length, faster.contacts.length, 'higher render rates must not inject extra energy');
+  assert.equal(deep.contacts.length, 0, 'deep swimming should not produce surface rings');
+  assert(shallow.contacts.every(contact => Number.isFinite(contact.strength) && contact.strength > 0 && contact.strength < 0.05 && pondFraction(contact.x, contact.z) < 1));
+  assert(shallow.waves.heights.some(height => Math.abs(height) > 0.001), 'wake impulses must move surface vertices');
 });
 
 test('koi have a vertical dorsal fin, trailing caudal fin and a volumetric body', () => {

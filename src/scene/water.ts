@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Reflector } from 'three/addons/objects/Reflector.js';
-import { horizontal, POND, pondPoint, pondShape, randomGenerator } from './common';
+import { POND, pondFloorY, pondPoint, randomGenerator } from './common';
 import { PondWaves } from './waves';
 
 /** The reflection is rendered from a clipped mirror camera, then blended over the fish. */
@@ -25,8 +25,26 @@ export function createWater(scene: THREE.Scene) {
       diffuseColor.rgb += vec3(0.20, 0.28, 0.17) * (caustic * 0.06 + caustic2 * 0.035);
     `);
   };
-  const floor = new THREE.Mesh(horizontal(new THREE.ShapeGeometry(pondShape())), floorMaterial);
-  floor.position.y = -0.62;
+  const floorVertices = [POND.x, POND.floorY, POND.z];
+  const floorIndices: number[] = [];
+  const floorRings = 24, floorSegments = 128;
+  for (let ring = 1; ring <= floorRings; ring++) for (let segment = 0; segment < floorSegments; segment++) {
+    const p = pondPoint(segment / floorSegments * Math.PI * 2, ring / floorRings);
+    floorVertices.push(p.x, pondFloorY(p.x, p.z), p.z);
+    const current = 1 + (ring - 1) * floorSegments + segment;
+    const next = 1 + (ring - 1) * floorSegments + (segment + 1) % floorSegments;
+    if (ring === 1) floorIndices.push(0, next, current);
+    else {
+      const inner = current - floorSegments, innerNext = next - floorSegments;
+      floorIndices.push(inner, innerNext, current, innerNext, next, current);
+    }
+  }
+  const floorGeometry = new THREE.BufferGeometry();
+  floorGeometry.setAttribute('position', new THREE.Float32BufferAttribute(floorVertices, 3));
+  floorGeometry.setIndex(floorIndices);
+  floorGeometry.computeVertexNormals();
+  const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+  floor.name = 'recessed-pond-bowl';
   floor.receiveShadow = true;
   scene.add(floor);
 
@@ -36,7 +54,7 @@ export function createWater(scene: THREE.Scene) {
   const bankIndices: number[] = [];
   for (let i = 0; i <= 128; i++) {
     const p = pondPoint(i / 128 * Math.PI * 2);
-    bankVertices.push(p.x, 0.12, p.z, p.x, -0.67, p.z);
+    bankVertices.push(p.x, 0.12, p.z, p.x, pondFloorY(p.x, p.z) - 0.025, p.z);
     if (i < 128) bankIndices.push(i * 2, i * 2 + 1, i * 2 + 2, i * 2 + 1, i * 2 + 3, i * 2 + 2);
   }
   const bankGeometry = new THREE.BufferGeometry();
@@ -136,7 +154,8 @@ export function createWater(scene: THREE.Scene) {
   for (let i = 0; i < 95; i++) {
     const angle = random() * 6.28;
     const r = 0.75 + random() * 0.15;
-    dummy.position.set(POND.x + Math.cos(angle) * POND.rx * r, -0.58, POND.z + Math.sin(angle) * POND.rz * r);
+    const x = POND.x + Math.cos(angle) * POND.rx * r, z = POND.z + Math.sin(angle) * POND.rz * r;
+    dummy.position.set(x, pondFloorY(x, z) + 0.03, z);
     const s = 0.04 + random() * 0.08;
     dummy.scale.set(s * 1.5, s * 0.5, s);
     dummy.rotation.y = random() * 6.28;

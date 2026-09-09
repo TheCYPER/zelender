@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { randomGenerator } from './common';
 import { groundHeight } from './vegetation';
+import { countrysideFootprint } from './countryside';
+import { addFoliageWind, type WindState } from './wind';
 
 /** A small cupped lanceolate leaf, with a raised midrib and curved edges. */
 function smallLeaf(): THREE.BufferGeometry {
@@ -33,8 +35,8 @@ function smallLeaf(): THREE.BufferGeometry {
 type Shrub = { x: number; z: number; height: number; rx: number; rz: number; seed: number; hue?: number };
 
 /** Clipped garden shrubs: dark interior volume under many individually curved leaves. */
-export function createGardenShrubs(scene: THREE.Scene): THREE.InstancedMesh[] {
-  const planting: Shrub[] = [
+export function createGardenShrubs(scene: THREE.Scene, wind: WindState): THREE.InstancedMesh[] {
+  const candidates: Shrub[] = [
     { x: -8.8, z: -0.9, height: 0.88, rx: 1.12, rz: 0.82, seed: 57 },
     { x: -6.7, z: -5.7, height: 0.53, rx: 0.94, rz: 0.70, seed: 134 },
     { x: 8.4, z: 0.1, height: 1.08, rx: 1.12, rz: 0.86, seed: 263 },
@@ -64,6 +66,7 @@ export function createGardenShrubs(scene: THREE.Scene): THREE.InstancedMesh[] {
     { x: -2.1, z: -7.3, height: 0.70, rx: 1.80, rz: 0.90, seed: 3835, hue: 0.30 },
     { x: 1.5, z: -7.1, height: 0.39, rx: 1.16, rz: 0.68, seed: 4077 },
   ];
+  const planting = candidates.filter(shrub => !countrysideFootprint(shrub.x, shrub.z, shrub.rx));
   const group = new THREE.Group();
   group.name = 'clipped-garden-azaleas';
   scene.add(group);
@@ -79,6 +82,7 @@ export function createGardenShrubs(scene: THREE.Scene): THREE.InstancedMesh[] {
     side: THREE.DoubleSide,
     envMapIntensity: 0.35,
   }), counts.reduce((sum, count) => sum + count, 0));
+  addFoliageWind(leaves.material, wind, 0.09);
   leaves.name = 'azalea-individual-leaves';
   leaves.castShadow = false;
   leaves.receiveShadow = true;
@@ -89,6 +93,7 @@ export function createGardenShrubs(scene: THREE.Scene): THREE.InstancedMesh[] {
     roughness: 1,
     envMapIntensity: 0.18,
   });
+  addFoliageWind(coreMaterial,wind,0.034,true);
   const dummy = new THREE.Object3D();
   const normal = new THREE.Vector3(), localZ = new THREE.Vector3(0, 0, 1);
   const color = new THREE.Color();
@@ -96,6 +101,10 @@ export function createGardenShrubs(scene: THREE.Scene): THREE.InstancedMesh[] {
   const coreParts: THREE.BufferGeometry[] = [];
 
   planting.forEach((shrub, shrubIndex) => {
+    // Golden new growth is grouped by plant, with a matching shaded interior.
+    const golden = [1, 3, 6, 10, 17, 21, 24, 27].includes(shrubIndex);
+    const hue = golden ? 0.225 : (shrub.hue ?? 0.29);
+    const lightness = golden ? 0.39 : 0.275;
     const random = randomGenerator(shrub.seed);
     const baseY = groundHeight(shrub.x, shrub.z);
     const phase = random() * Math.PI * 2;
@@ -108,17 +117,19 @@ export function createGardenShrubs(scene: THREE.Scene): THREE.InstancedMesh[] {
     // It is deliberately smaller than the foliage envelope and locally uneven.
     const coreGeometry = new THREE.SphereGeometry(1, 40, 24);
     const corePositions = coreGeometry.getAttribute('position');
-    const coreColors: number[] = [];
+    const coreColors: number[] = [], flex: number[] = [];
     for (let i = 0; i < corePositions.count; i++) {
       const x = corePositions.getX(i), y = corePositions.getY(i), z = corePositions.getZ(i);
+      flex.push(Math.pow(Math.max(0,(y+0.4)/1.4),2)*shrub.height);
       const angle = Math.atan2(z, x);
       const r = radiusAt(angle, y) * 0.91;
       corePositions.setXYZ(i, x * shrub.rx * r, y * shrub.height * 0.65 + shrub.height * 0.27, z * shrub.rz * r);
       const patch = Math.sin(x * 37 + phase) * Math.cos(z * 31 - y * 19);
-      color.setHSL((shrub.hue ?? 0.275) + patch * 0.012, 0.43, 0.24 + (y + 1) * 0.025 + patch * 0.012, THREE.SRGBColorSpace);
+      color.setHSL(hue + patch * 0.012, golden ? 0.48 : 0.43, lightness - 0.045 + (y + 1) * 0.025 + patch * 0.012, THREE.SRGBColorSpace);
       coreColors.push(color.r, color.g, color.b);
     }
     coreGeometry.setAttribute('color', new THREE.Float32BufferAttribute(coreColors, 3));
+    coreGeometry.setAttribute('windWeight',new THREE.Float32BufferAttribute(flex,1));
     coreGeometry.computeVertexNormals();
     coreGeometry.translate(shrub.x, baseY, shrub.z);
     coreParts.push(coreGeometry);
@@ -144,7 +155,7 @@ export function createGardenShrubs(scene: THREE.Scene): THREE.InstancedMesh[] {
       dummy.updateMatrix();
       leaves.setMatrixAt(leafIndex, dummy.matrix);
       const topLight = Math.max(0, y);
-      color.setHSL((shrub.hue ?? 0.27) + (random() - 0.5) * 0.033, 0.42 + random() * 0.12, 0.26 + topLight * 0.04 + random() * 0.025, THREE.SRGBColorSpace);
+      color.setHSL(hue + (random() - 0.5) * 0.033, 0.42 + random() * 0.12, lightness + topLight * 0.045 + random() * 0.035, THREE.SRGBColorSpace);
       leaves.setColorAt(leafIndex++, color);
     }
   });
@@ -156,7 +167,7 @@ export function createGardenShrubs(scene: THREE.Scene): THREE.InstancedMesh[] {
     cores.castShadow = cores.receiveShadow = true;
     group.add(cores);
   }
-  addLayeredPlanting(scene);
+  addLayeredPlanting(scene,wind);
   leaves.instanceMatrix.needsUpdate = true;
   if (leaves.instanceColor) leaves.instanceColor.needsUpdate = true;
   leaves.computeBoundingSphere();
@@ -164,7 +175,7 @@ export function createGardenShrubs(scene: THREE.Scene): THREE.InstancedMesh[] {
 }
 
 /** Lower-detail planting occupies real sloping ground, never a painted horizon. */
-function addLayeredPlanting(scene: THREE.Scene): void {
+function addLayeredPlanting(scene: THREE.Scene, wind: WindState): void {
   const random = randomGenerator(59083), dummy = new THREE.Object3D(), color = new THREE.Color();
   const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.96, envMapIntensity: 0.25 });
   material.onBeforeCompile = (shader) => {
@@ -188,6 +199,7 @@ function addLayeredPlanting(scene: THREE.Scene): void {
     `);
   };
   material.customProgramCacheKey = () => 'layered-clipped-planting-v1';
+  addFoliageWind(material,wind,0.028);
 
   const geometryFor = (kind: number, distant: boolean) => {
     const parts: THREE.BufferGeometry[] = [];
@@ -237,7 +249,7 @@ function addLayeredPlanting(scene: THREE.Scene): void {
       const size = j === 0 ? 1.0 : 0.53 + random() * 0.28;
       middle.push({ x: cx + Math.cos(angle) * r, z: cz + Math.sin(angle) * r * 0.67,
         rx: spread * size * 0.64, rz: spread * size * (0.40 + random() * 0.15),
-        height: height * size, hue: 0.285 + (islandIndex % 4) * 0.015 });
+        height: height * size, hue: islandIndex % 3 === 1 ? 0.225 : 0.285 + (islandIndex % 4) * 0.015 });
     }
   });
   // Smaller tree-crown pockets follow the rear contours with clear glades
@@ -262,10 +274,10 @@ function addLayeredPlanting(scene: THREE.Scene): void {
       }
     }
   });
-  const farPalette = ['#203d31', '#2b4637', '#344c3a', '#253b34', '#40523b', '#314b40'];
+  const farPalette = ['#294b38', '#3e623e', '#5f783e', '#2b463b', '#799244', '#3d624a', '#506e38'];
   for (const [plants, distant] of [[middle, false], [far, true]] as const) {
     for (let kind = 0; kind < 3; kind++) {
-      const subset = plants.filter((_, index) => index % 3 === kind);
+      const subset = plants.filter((plant, index) => index % 3 === kind && !countrysideFootprint(plant.x, plant.z, plant.rx));
       const crowns = new THREE.InstancedMesh(geometryFor(kind, distant), material, subset.length);
       crowns.name = `${distant ? 'far' : 'middle'}-planted-contours-${kind}`;
       crowns.castShadow = !distant;
@@ -279,7 +291,7 @@ function addLayeredPlanting(scene: THREE.Scene): void {
         if (distant) {
           color.set(farPalette[Math.floor(random() * farPalette.length)]).multiplyScalar(0.87 + random() * 0.25);
         } else {
-          color.setHSL(plant.hue, 0.28 + random() * 0.15, 0.22 + random() * 0.07, THREE.SRGBColorSpace);
+          color.setHSL(plant.hue, 0.34 + random() * 0.14, (plant.hue < 0.25 ? 0.36 : 0.26) + random() * 0.065, THREE.SRGBColorSpace);
         }
         crowns.setColorAt(index, color);
       });
