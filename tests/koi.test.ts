@@ -122,6 +122,40 @@ test('body volumes remain separated when koi crowd food and repeatedly flee', ()
   assert(minimumGap < 0.15, 'scenario must exercise close body contacts');
 });
 
+test('crowded fish separate even when the surface and shoreline block part of each correction', () => {
+  const sim = foodSimulation();
+  const shore = pondPoint(1.0, 0.83);
+  const initial = sim.state(0).fish;
+  // A compact surface-feeding cluster makes several separation constraints
+  // compete with both the upper water bound and the outer bank at once.
+  for (let i = 0; i < 7; i++) {
+    sim.scene.getObjectByName(`koi-${i}`)!.position.set(
+      shore.x + (i % 3 - 1) * 0.17,
+      initial[i].verticalBounds.max - (i % 2) * 0.008,
+      shore.z - Math.floor(i / 3) * 0.16,
+    );
+  }
+  sim.koi.update(0.1, 0, false);
+  const fish = sim.state(0.1).fish;
+  for (let a = 0; a < fish.length; a++) for (let b = a + 1; b < fish.length; b++) {
+    const first = fish[a], second = fish[b];
+    const axis = new THREE.Vector3(Math.sin(second.heading) * Math.cos(second.pitch), Math.sin(second.pitch), Math.cos(second.heading) * Math.cos(second.pitch));
+    for (let sample = 0; sample <= 24; sample++) {
+      const offset = (sample / 12 - 1) * first.collisionHalfLength;
+      const delta = new THREE.Vector3(
+        first.x + Math.sin(first.heading) * Math.cos(first.pitch) * offset - second.x,
+        first.y + Math.sin(first.pitch) * offset - second.y,
+        first.z + Math.cos(first.heading) * Math.cos(first.pitch) * offset - second.z,
+      );
+      const along = THREE.MathUtils.clamp(delta.dot(axis), -second.collisionHalfLength, second.collisionHalfLength);
+      const gap = delta.addScaledVector(axis, -along).length() - first.collisionRadius - second.collisionRadius;
+      assert(gap >= -0.006, `surface/bank constraint left fish ${a}/${b} overlapping by ${-gap}`);
+    }
+  }
+  assert(fish.every(koi => pondFraction(koi.x, koi.z) <= 0.861));
+  assert(fish.every(koi => koi.y <= koi.verticalBounds.max + 0.001 && koi.y >= koi.verticalBounds.min - 0.001));
+});
+
 test('koi explore a water column with pitched rises and dives while remaining submerged', () => {
   const sim = foodSimulation();
   const depths = Array.from({ length: 14 }, () => ({ min: Infinity, max: -Infinity, up: false, down: false }));

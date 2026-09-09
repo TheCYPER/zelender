@@ -431,16 +431,16 @@ export function createKoi(scene: THREE.Scene, softMap: THREE.Texture,
       koi.fins[1].rotation.y = -swim * 0.13 * movement;
       koi.shadow.rotation.y = koi.heading;
     }
-    // Positional capsule constraints provide a final guarantee when urgent
-    // feeding/scares turn fish faster than steering can keep them apart.
-    for (let iteration = 0; iteration < 12; iteration++) {
-      let largestOverlap = 0;
+    // Surface/bank projection can undo part of a capsule correction. Iterate
+    // until the *projected* configuration converges, leaving a tiny real gap
+    // instead of depending on platform-specific rounding in crowded schools.
+    const separationMargin = 0.003;
+    for (let iteration = 0; iteration < 48; iteration++) {
       for (let a = 0; a < fish.length; a++) for (let b = a + 1; b < fish.length; b++) {
         const contact = bodyContact(fish[a], fish[b]);
-        const overlap = contact.radius - contact.distance;
+        const overlap = contact.radius + separationMargin - contact.distance;
         if (overlap <= 0) continue;
-        largestOverlap = Math.max(largestOverlap, overlap);
-        const push = overlap * 0.5 + 0.0002;
+        const push = overlap * 0.5;
         fish[a].group.position.x += contact.nx * push;
         fish[a].group.position.y += contact.ny * push;
         fish[a].group.position.z += contact.nz * push;
@@ -459,7 +459,12 @@ export function createKoi(scene: THREE.Scene, softMap: THREE.Texture,
         const bounds = verticalBounds(koi);
         position.y = THREE.MathUtils.clamp(position.y, bounds.min, bounds.max);
       }
-      if (largestOverlap < 0.0005) break;
+      let unresolved = false;
+      for (let a = 0; a < fish.length && !unresolved; a++) for (let b = a + 1; b < fish.length; b++) {
+        const contact = bodyContact(fish[a], fish[b]);
+        if (contact.radius + separationMargin - contact.distance > 0.00025) { unresolved = true; break; }
+      }
+      if (!unresolved) break;
     }
     for (let i = 0; i < fish.length; i++) {
       const koi = fish[i], position = koi.group.position;
